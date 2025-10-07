@@ -8,10 +8,8 @@ logs/
 *.log
 
 pesquisa_v5/v5_dataset*/
-pesquisa_v5/v5_pipeline/
 
 pesquisa_v6/v6_dataset*/
-pesquisa_v6/v6_pipeline/
 pesquisa_v6/experiments/
 
 *.pt
