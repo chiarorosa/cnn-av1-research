@@ -1,0 +1,4 @@
+# Ignore generated artifacts; keep folder skeleton in git
+**
+!**/.gitkeep
+!.gitignore

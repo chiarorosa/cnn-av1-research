@@ -4,13 +4,10 @@ __pycache__/
 .venv/
 venv/
 env/
-logs/
+# Logs directories keep structure via .gitkeep placeholders
+**/logs/**
 *.log
-
-pesquisa_v5/v5_dataset*/
-
-pesquisa_v6/v6_dataset*/
-pesquisa_v6/experiments/
+!**/logs/**/.gitkeep
 
 *.pt
 *.pth
