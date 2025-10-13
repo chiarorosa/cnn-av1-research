@@ -1,8 +1,8 @@
 # Pipeline v6 - Plano de Desenvolvimento Consolidado
 
 **Data:** 13 de outubro de 2025  
-**Status:** 🟡 Em Desenvolvimento - Scripts 8/9 concluídos  
-**Última Atualização:** 13/10/2025  
+**Status:** ✅ Experimento 09 Concluído - Noise Injection (Sucesso Parcial)  
+**Última Atualização:** 13/10/2025 18:00  
 **Responsável:** @chiarorosa
 
 ---
@@ -26,6 +26,50 @@ O pipeline v6 é uma reformulação completa da arquitetura hierárquica, focand
 | **Script 006 (Stage 3-AB)** | ✅ Validado | F1=24.50% (4/4 classes, época 6) |
 | **Script 007 (Threshold)** | ✅ Validado | threshold=0.45 → F1=72.79% |
 | **Script 008 (Pipeline)** | ✅ Validado | Accuracy=47.66% (meta: 48%, gap: -0.34pp) |
+| **Experimento 09 (Noise Injection)** | ✅ **COMPLETO** | Accuracy=45.86% (-1.80pp), Cascade error reduzido (+28pp RECT, +56pp AB) |
+
+---
+
+## 🎯 Experimento 09: Noise Injection - Resultados (13/10/2025)
+
+### Status: ✅ COMPLETO - Sucesso Parcial
+
+**Branch:** `feat/noise-injection-stage3` (merged to main)  
+**Commits:** `1f30800`, `9fd4dfe`, `35f5008`, merge `46508ef`
+
+### Resultados Principais
+
+| Métrica | Baseline | Com Noise Injection | Delta | Status |
+|---------|----------|---------------------|-------|--------|
+| **Pipeline Accuracy** | 47.66% | **45.86%** | **-1.80pp** ❌ | Meta 48.0% não atingida |
+| **Cascade Error RECT** | -93.4% | **-65%** | **+28pp** ✅ | Melhoria significativa |
+| **Cascade Error AB** | -93.8% | **-38%** | **+56pp** ✅ | Melhoria significativa |
+| **HORZ F1** | 0.00% | **23.94%** | **+23.94pp** ✅ | Classe recuperada! |
+| **VERT_A F1** | 0.00% | **15.25%** | **+15.25pp** ✅ | Classe recuperada! |
+| **Classes Colapsadas** | 5 | **3** | **-40%** ✅ | Progresso |
+| Stage 3-RECT Standalone | 68.44% | 68.76% | +0.32pp ✅ | Manteve performance |
+| Stage 3-AB Standalone | 24.50% | 19.41% | -5.09pp ❌ | Degradou |
+
+### Descobertas Científicas
+
+1. **✅ Hipótese H3.1 PARCIALMENTE VALIDADA:** Distribution Shift é causa raiz do erro cascata
+2. **✅ Noise Injection funciona:** Reduziu cascade error em 28-56pp
+3. **⚠️ Trade-off confirmado:** Robustez ↑, Accuracy ↓ (-1.80pp)
+4. **✅ Bug crítico descoberto:** IndexError em multi-dataset sampling (fix commit 35f5008)
+5. **✅ Primeira aplicação:** Noise injection em pipeline hierárquico de codec
+
+### Limitações Identificadas
+
+1. **Labels aleatórios:** Não usa confusão real do Stage 2
+2. **Ensemble não implementado:** Usado 1 modelo AB repetido 3x
+3. **Hyperparâmetros fixos:** Noise ratio=25% não otimizado
+4. **Early stopping agressivo:** Patience=5 pode ter sido curto
+
+### Documentação
+
+- **Documento PhD:** `docs_v6/09_noise_injection_stage3.md` (1000+ linhas)
+- **Atualizado:** `docs_v6/00_README.md` com resumo
+- **Scripts modificados:** `005_train_stage3_rect.py`, `006_train_stage3_ab_fgvc.py`
 ---
 
 ## 🎯 Objetivos e Metas
@@ -251,7 +295,37 @@ O pipeline v6 é uma reformulação completa da arquitetura hierárquica, focand
 
 ---
 
-## 🎯 PRÓXIMOS PASSOS: Resolver Erro em Cascata
+## 🎯 PRÓXIMOS PASSOS: Pós-Experimento 09
+
+**⚠️ DOCUMENTO COMPLETO:** [`PROXIMOS_PASSOS.md`](./PROXIMOS_PASSOS.md)
+
+### Resumo Executivo (13/10/2025)
+
+**Situação atual:**
+- ✅ Experimento 09 completo: Noise Injection validou H3.1 (Distribution Shift é causa raiz)
+- ⚠️ Trade-off identificado: Robustez ↑ (cascade error -28pp), Accuracy ↓ (-1.80pp)
+- 🎯 Próximo: Experimento 10 - Confusion-Based Noise Injection
+
+**Gap atual:** Accuracy 45.86% vs Meta 48.0% = **-2.14pp**
+
+**Estratégia:** Substituir labels aleatórios por distribuição de confusão real do Stage 2
+
+**Cronograma:**
+- **14/10 (0.5d):** Analisar confusion matrix Stage 2 → Script 009
+- **15/10 (1d):** Implementar confusion-based labels
+- **16-17/10 (1.5d):** Retreinar Stage 3 com noise realista
+- **18/10 (0.5d):** Avaliação e decisão
+
+**Ganho esperado:** +1.5-2.5pp (45.86% → 47.5-48.5%)
+
+**Ver detalhes completos em:** [`PROXIMOS_PASSOS.md`](./PROXIMOS_PASSOS.md)
+
+---
+
+## 🗂️ ARQUIVADO: Estratégia Antiga (Pré-Experimento 09)
+
+<details>
+<summary>Clique para expandir plano original (mantido para registro histórico)</summary>
 
 ### Estratégia Baseada em Evidências
 > "Focar no problema real: Stage 2 confunde RECT vs AB, causando colapso dos Stage 3."
@@ -743,11 +817,23 @@ pesquisa_v6/
 
 ---
 
-## 🤝 Próximo Passo Imediato
+</details>
 
-### Decisão: Executar Fase 1 (3-4 dias)
+## 🤝 Próximo Passo Imediato (14/10/2025)
 
-**Sequência Recomendada:**
+**⚠️ Ver detalhes completos em:** [`PROXIMOS_PASSOS.md`](./PROXIMOS_PASSOS.md)
+
+### Ação: Iniciar Experimento 10 (Confusion-Based Noise)
+
+**Manhã (14/10 - 4h):**
+```bash
+# Criar Script 009: Análise de Confusion Matrix Stage 2
+cd pesquisa_v6/scripts
+python3 009_analyze_stage2_confusion.py \
+  --stage2-model ../logs/v6_experiments/stage2/stage2_model_best.pt \
+  --dataset ../v6_dataset/block_16/val.pt \
+  --output ../logs/v6_experiments/confusion_matrix_stage2.json
+```
 
 ```bash
 # 1. Dia 1 manhã: Diagnose Stage 3-RECT (2h)
