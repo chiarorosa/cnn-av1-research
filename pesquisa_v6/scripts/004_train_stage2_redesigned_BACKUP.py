@@ -1,8 +1,6 @@
 """
-Script 004: Train Stage 2 Redesigned (Train from Scratch)
+Script 004: Train Stage 2 Redesigned
 Stage 2: 3-way classification (SPLIT, RECT, AB)
-
-⚠️  CRITICAL CHANGE: Not loading Stage 1 backbone (Negative Transfer issue)
 
 Improvements based on literature:
 1. Class-Balanced Focal Loss (Cui et al., 2019) - Addresses long-tailed distribution
@@ -10,26 +8,12 @@ Improvements based on literature:
 3. Gradual Unfreezing (Howard & Ruder, 2018) - Prevents catastrophic forgetting
 4. Data Augmentation (Shorten & Khoshgoftaar, 2019) - Improves generalization
 5. Cosine Annealing (Loshchilov & Hutter, 2017 - SGDR) - Better convergence
-6. Train from Scratch (Kornblith et al., 2019) - Avoids negative transfer
 
 Key Changes from v1:
 - REMOVED Label Smoothing (conflicts with Focal Loss, Müller et al., 2019)
 - INCREASED freeze epochs (2→8) to stabilize head before unfreezing
 - DECREASED backbone LR (1e-5→1e-6) for discriminative fine-tuning (500x smaller)
 - ADDED Cosine Annealing scheduler after unfreezing
-- REMOVED Stage 1 backbone loading (negative transfer Stage 1→Stage 2)
-
-Rationale for Train from Scratch:
-- Stage 1 task: Binary (NONE vs PARTITION) - features for "partition detection"
-- Stage 2 task: 3-way (SPLIT vs RECT vs AB) - features for "partition type classification"
-- Tasks are fundamentally different → Negative Transfer (Yosinski et al., 2014)
-- ImageNet pretrained features (edges, textures, shapes) are more general and useful
-
-Expected Results:
-- Baseline (frozen epochs 1-8): F1 ~40-45%
-- After unfreezing (epochs 9-30): F1 ~50-55% (without catastrophic forgetting)
-
-See: pesquisa_v6/PLANO_v6_val2.md for full analysis
 
 References:
 - Cui, Y., et al. (2019). Class-Balanced Loss Based on Effective Number of Samples. CVPR.
@@ -37,8 +21,6 @@ References:
 - Müller, R., et al. (2019). When Does Label Smoothing Help? NeurIPS.
 - Loshchilov, I., & Hutter, F. (2017). SGDR: Stochastic Gradient Descent with Warm Restarts. ICLR.
 - Shorten, C., & Khoshgoftaar, T. M. (2019). A survey on Image Data Augmentation. Journal of Big Data.
-- Yosinski, J., et al. (2014). How transferable are features in deep neural networks? NIPS.
-- Kornblith, S., et al. (2019). Do Better ImageNet Models Transfer Better? CVPR.
 """
 
 import sys
@@ -295,16 +277,17 @@ def main():
     print(f"\n[3/6] Creating model...")
     model = Stage2Model(pretrained=True).to(device)
     
-    # ⚠️  NOT loading Stage 1 backbone due to Negative Transfer
-    # Reason: Stage 1 (binary: NONE vs PARTITION) features are incompatible 
-    #         with Stage 2 (3-way: SPLIT vs RECT vs AB) task
-    # References:
-    #   - Yosinski et al., 2014: "How transferable are features in deep neural networks?"
-    #   - Kornblith et al., 2019: "Do Better ImageNet Models Transfer Better?"
-    # Solution: Use only ImageNet pretrained ResNet-18 (already loaded via pretrained=True)
-    print(f"  📚 Using ImageNet-only pretrained ResNet-18")
-    print(f"  🔬 Strategy: Train from scratch to avoid negative transfer")
-    print(f"  📄 See: PLANO_v6_val2.md (Opção 1)")
+    # Load Stage 1 backbone if available
+    if Path(args.stage1_model).exists():
+        print(f"  Loading Stage 1 backbone from: {args.stage1_model}")
+        checkpoint = torch.load(args.stage1_model, map_location=device, weights_only=False)
+        # Load only backbone weights
+        stage1_state = checkpoint['model_state_dict']
+        backbone_state = {k.replace('backbone.', ''): v for k, v in stage1_state.items() if k.startswith('backbone.')}
+        model.backbone.load_state_dict(backbone_state, strict=False)
+        print(f"  ✅ Backbone initialized from Stage 1")
+    else:
+        print(f"  ⚠️  Stage 1 model not found, using random initialization")
     
     print(f"  Parameters: {sum(p.numel() for p in model.parameters()):,}")
     
