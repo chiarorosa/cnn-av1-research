@@ -537,8 +537,7 @@ def main():
     criterion = ClassBalancedFocalLoss(
         samples_per_class=samples_per_class,
         beta=args.focal_beta,
-        gamma=args.focal_gamma,
-        num_classes=7
+        gamma=args.focal_gamma
     ).to(device)
     
     print(f"  Loss: Class-Balanced Focal Loss")
