@@ -597,20 +597,20 @@ def main():
         
         # Log metrics
         print(f"\n  Epoch {epoch:2d} Summary:")
-        print(f"    Train - Loss: {train_metrics['loss']:.4f}, F1: {train_metrics['f1_macro']:.4f}, Acc: {train_metrics['accuracy']:.4f}")
-        print(f"    Val   - Loss: {val_metrics['loss']:.4f}, F1: {val_metrics['f1_macro']:.4f}, Acc: {val_metrics['accuracy']:.4f}")
+        print(f"    Train - Loss: {train_metrics['loss']:.4f}, F1: {train_metrics['macro_f1']:.4f}, Acc: {train_metrics['accuracy']:.4f}")
+        print(f"    Val   - Loss: {val_metrics['loss']:.4f}, F1: {val_metrics['macro_f1']:.4f}, Acc: {val_metrics['accuracy']:.4f}")
         
         # Save history
         history['train_loss'].append(train_metrics['loss'])
-        history['train_f1'].append(train_metrics['f1_macro'])
+        history['train_f1'].append(train_metrics['macro_f1'])
         history['train_acc'].append(train_metrics['accuracy'])
         history['val_loss'].append(val_metrics['loss'])
-        history['val_f1'].append(val_metrics['f1_macro'])
+        history['val_f1'].append(val_metrics['macro_f1'])
         history['val_acc'].append(val_metrics['accuracy'])
         
         # Save best model
-        if val_metrics['f1_macro'] > best_f1:
-            best_f1 = val_metrics['f1_macro']
+        if val_metrics['macro_f1'] > best_f1:
+            best_f1 = val_metrics['macro_f1']
             patience_counter = 0
             
             torch.save({
