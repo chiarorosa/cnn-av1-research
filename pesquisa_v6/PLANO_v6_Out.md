@@ -2,14 +2,50 @@
 
 **Data:** 13 de outubro de 2025  
 **Status:** ✅ Experimento 09 Concluído - Noise Injection (Sucesso Parcial)  
-**Última Atualização:** 13/10/2025 18:00  
+**Última Atualização:** 13/10/2025  
 **Responsável:** @chiarorosa
 
 ---
 
 ## 📋 Sumário Executivo
 
-O pipeline v6 é uma reformulação completa da arquitetura hierárquica, focando em resolver os **3 problemas críticos** identificados na v5:
+O pipeline v6 é uma reformulação completa da arquitetura hierárquica, focando em resolver os **3 proble**Ganho esperado:** Entendiment**Ganho esper**Ganh**Ganho esperado:** +0.1-0.3pp (se viés confirmado e corrigido)
+
+### Fase 2: Soluções Robustas - **RECOMENDADA** (ARQUIVADO - original com timeline)
+
+**Objetivo:** Resolver confusão RECT vs AB + Robustez dos Stage 3
+
+#### 2.1 Noise ---
+
+## 🚀 Ação Imediata Recomendada (ARQUIVADO - versão original com timeline)
+
+### **COMEÇAR COM FASE 1: Diagnóstico Profundo**
+
+```bash
+# 1. Criar Script 009: Análise de Confusão RECT vs ABn em Stage 3 🔴 **ALTA PRIORIDADE** (ARQUIVADO)ado:** +0.1-0.3pp (se viés confirmado e corrigido)
+
+### Fase 2: Soluções Robustas - **RECOMENDADA** (ARQUIVADO)
+
+**Objetivo:** Resolver confusão RECT vs AB + Robustez dos Stage 3
+
+#### 2.1 Noise Injection em Stage 3 🔴 **ALTA PRIORIDADE** (ARQUIVADO)+0.1-0.3pp (se viés confirmado e corrigido)
+
+### Fase 2: Soluções Robustas - **RECOMENDADA**
+
+**Objetivo:** Resolver confusão RECT vs AB + Robustez dos Stage 3
+
+#### 2.1 Noise Injection em Stage 3 🔴 **ALTA PRIORIDADE** ---
+
+## 🚀 Ação Imediata Recomendada
+
+### **COMEÇAR COM FASE 1: Diagnóstico Profundo**
+
+```bash
+# 1. Criar Script 009: Análise de Confusão RECT vs ABcascata
+
+#### 1.2 Avaliar Viés do Stage 3-RECT 🔴 **CRÍTICO**
+
+**Problema Observado:** HORZ colapsou (0% F1), VERT superestimado (+16.19%)ríticos** identificados na v5:
 
 1. **Stage 1**: Baixa precisão (53.71%) → 27k falsos positivos contaminando o pipeline
 2. **Stage 2**: Confusão entre macro-classes (33.41% Macro F1) → Erros propagados
@@ -310,11 +346,11 @@ O pipeline v6 é uma reformulação completa da arquitetura hierárquica, focand
 
 **Estratégia:** Substituir labels aleatórios por distribuição de confusão real do Stage 2
 
-**Cronograma:**
-- **14/10 (0.5d):** Analisar confusion matrix Stage 2 → Script 009
-- **15/10 (1d):** Implementar confusion-based labels
-- **16-17/10 (1.5d):** Retreinar Stage 3 com noise realista
-- **18/10 (0.5d):** Avaliação e decisão
+**Sequência de passos:**
+- Analisar confusion matrix Stage 2 → Script 009
+- Implementar confusion-based labels
+- Retreinar Stage 3 com noise realista
+- Avaliação e decisão
 
 **Ganho esperado:** +1.5-2.5pp (45.86% → 47.5-48.5%)
 
@@ -330,7 +366,7 @@ O pipeline v6 é uma reformulação completa da arquitetura hierárquica, focand
 ### Estratégia Baseada em Evidências
 > "Focar no problema real: Stage 2 confunde RECT vs AB, causando colapso dos Stage 3."
 
-### Fase 1: Diagnóstico Profundo (1-2 dias) - **CRÍTICO**
+### Fase 1: Diagnóstico Profundo - **CRÍTICO**
 
 #### 1.1 Analisar Confusão RECT vs AB no Stage 2 🔴 **CRÍTICO**
 
@@ -459,13 +495,7 @@ python3 008_run_pipeline_eval_v6.py \
 - Stage 3-AB pipeline accuracy: 1.51% → 5-10% (+231-562%)
 - Overall pipeline: **+1.0-2.5pp** → Accuracy 48.7-50.2% ✅✅
 
-**Custo:**
-- 1.5 dia retreino Stage 3-RECT (30 epochs)
-- 1.5 dia retreino Stage 3-AB (30 epochs)
-- 0.5 dia pipeline evaluation + análise
-- **Total:** 3.5 dias
-
-#### 2.2 Melhorar Separação RECT vs AB no Stage 2 (2 dias) 🟡 **MÉDIA PRIORIDADE**
+#### 2.2 Melhorar Separação RECT vs AB no Stage 2 🟡 **MÉDIA PRIORIDADE**
 
 **Problema:** Stage 2 confunde RECT vs AB (causa do erro cascata)
 
@@ -498,13 +528,11 @@ for gamma in gammas:
 
 **Ganho Esperado:** Stage 2 confusion RECT↔AB reduz 30-40% → +0.5-1.0pp pipeline
 
-**Custo:** 2 dias
-
-### Fase 3: Técnicas Avançadas (1-2 semanas) - **EXPLORATÓRIO**
+### Fase 3: Técnicas Avançadas - **EXPLORATÓRIO**
 
 **Condição:** Fase 2 não atingiu 50% + disponibilidade de tempo
 
-#### 3.1 Multi-Task Learning Stage 2 (5 dias)
+#### 3.1 Multi-Task Learning Stage 2
 
 **Problema:** Stage 2 não aprende geometria interna de RECT
 
@@ -537,9 +565,7 @@ loss = cb_focal_3way + 0.5 * cross_entropy_rect_geometry
 
 **Ganho esperado:** +0.5-1.0pp
 
-**Custo:** 5 dias
-
-#### 3.2 Stage 2.5 Intermediate (4 dias)
+#### 3.2 Stage 2.5 Intermediate
 
 **Problema:** Stage 3-RECT recebe samples ruins e colapsa
 
@@ -555,44 +581,66 @@ Stage 2 → RECT → Stage 2.5 (HORZ vs VERT, treinado com noise) → Output
 
 **Ganho esperado:** +0.3-0.8pp
 
-**Custo:** 4 dias
-
 ---
 
 ## 📊 Resumo de Prioridades
 
-| ID | Técnica | Fase | Custo | Ganho | Prioridade |
-|----|---------|------|-------|-------|------------|
-| 1.1 | Analisar Confusão RECT vs AB | 1 | 4h | Diagnóstico | 🔴🔴🔴 CRÍTICO |
-| 1.2 | Diagnose Stage 3-RECT Viés | 1 | 2h | +0.1-0.3pp | 🔴🔴🔴 CRÍTICO |
-| **2.1** | **Noise Injection Stage 3** | **2** | **3.5d** | **+1.0-2.5pp** | 🔴🔴🔴 **RECOMENDADO** |
-| 2.2 | Melhorar RECT vs AB (Stage 2) | 2 | 2d | +0.5-1.0pp | 🔴🔴 Alta |
-| 3.1 | Multi-Task Stage 2 | 3 | 5d | +0.5-1.0pp | 🟡 Exploratório |
-| 3.2 | Stage 2.5 Intermediate | 3 | 4d | +0.3-0.8pp | 🟡 Exploratório |
+| ID | Técnica | Fase | Ganho | Prioridade |
+|----|---------|------|-------|------------|
+| 1.1 | Analisar Confusão RECT vs AB | 1 | Diagnóstico | 🔴🔴🔴 CRÍTICO |
+| 1.2 | Diagnose Stage 3-RECT Viés | 1 | +0.1-0.3pp | 🔴🔴🔴 CRÍTICO |
+| **2.1** | **Noise Injection Stage 3** | **2** | **+1.0-2.5pp** | 🔴🔴🔴 **RECOMENDADO** |
+| 2.2 | Melhorar RECT vs AB (Stage 2) | 2 | +0.5-1.0pp | 🔴🔴 Alta |
+| 3.1 | Multi-Task Stage 2 | 3 | +0.5-1.0pp | 🟡 Exploratório |
+| 3.2 | Stage 2.5 Intermediate | 3 | +0.3-0.8pp | 🟡 Exploratório |
 
 ---
 
 ## 🎯 Recomendação Estratégica Final
 
-### **PLANO RECOMENDADO: Fase 1 + Fase 2 (5-7 dias)**
+### **PLANO RECOMENDADO: Fase 1 + Fase 2**
 
-```
-Dia 1: 
-  - 1.1 Analisar Confusão RECT vs AB (4h)
-  - 1.2 Diagnose Stage 3-RECT (2h)
-  - Decisão: Confirmar diagnóstico do erro cascata
+**Sequência de passos:**
+1. Analisar Confusão RECT vs AB (Script 009)
+2. Diagnose Stage 3-RECT viés
+3. Decisão: Confirmar diagnóstico do erro cascata
+4. Noise Injection Stage 3-RECT (retreino)
+5. Noise Injection Stage 3-AB (retreino)
+6. Re-avaliar pipeline com modelos robustos
+7. Análise de resultados
+8. (SE NECESSÁRIO): Melhorar RECT vs AB com Focal Loss tuning
 
-Dias 2-4:
-  - 2.1 Noise Injection Stage 3-RECT (1.5 dias)
-  - 2.1 Noise Injection Stage 3-AB (1.5 dias)
-  
-Dia 5:
-  - Re-avaliar pipeline com modelos robustos
-  - Análise de resultados
+**Probabilidade de sucesso:** 70-85%  
+**Ganho esperado:** +1.0-3.0pp → **Accuracy 48.7-50.7%** ✅✅
 
-Dias 6-7 (SE NECESSÁRIO):
-  - 2.2 Melhorar RECT vs AB com Focal Loss tuning
-```
+**Fundamentação:**
+- **Fase 1** confirma diagnóstico (erro cascata Stage 2→3)
+- **Fase 2 (2.1)** ataca causa raiz (Stage 3 não robusto a erros)
+- Técnica validada na literatura (Hendrycks et al., 2019; Natarajan et al., 2013)
+- Implementação relativamente simples
+- Risco baixo (pior caso: sem melhoria, mas não piora)
+
+---
+
+## 🚀 Ação Imediata Recomendada
+
+### **COMEÇAR COM FASE 1: Diagnóstico Profundo**
+
+---
+
+## 🎯 Recomendação Estratégica Final (ARQUIVADO)
+
+### **PLANO RECOMENDADO: Fase 1 + Fase 2** (ARQUIVADO - Versão com cronograma detalhado)
+
+**Sequência original proposta:**
+- Análise de Confusão RECT vs AB
+- Diagnose Stage 3-RECT
+- Decisão: Confirmar diagnóstico do erro cascata
+- Noise Injection Stage 3-RECT (retreino)
+- Noise Injection Stage 3-AB (retreino)
+- Re-avaliar pipeline com modelos robustos
+- Análise de resultados
+- (SE NECESSÁRIO): Melhorar RECT vs AB com Focal Loss tuning
 
 **Probabilidade de sucesso:** 70-85%  
 **Ganho esperado:** +1.0-3.0pp → **Accuracy 48.7-50.7%** ✅✅
@@ -619,24 +667,24 @@ cd pesquisa_v6/scripts
 # - Gerar confusion matrix detalhada RECT vs AB
 # - Calcular taxa de erro Stage 2 → Stage 3
 
-# 2. Criar Script 010: Diagnose Stage 3-RECT (1-2 horas)
+# 2. Criar Script 010: Diagnose Stage 3-RECT
 # Implementar 010_diagnose_stage3_rect.py
 # - Avaliar Stage 3-RECT standalone
 # - Verificar viés VERT vs HORZ
 # - Analisar class distribution treino
 
-# 3. Executar diagnósticos (1 hora)
+# 3. Executar diagnósticos
 python3 009_analyze_stage2_confusion.py
 python3 010_diagnose_stage3_rect.py
 
-# 4. Análise de resultados e decisão (1 hora)
+# 4. Análise de resultados e decisão
 # - Confirmar hipótese de erro cascata
 # - Decidir: prosseguir para Fase 2 (Noise Injection)
 ```
 
-**Meta do dia:** Confirmar diagnóstico e planejar Fase 2
+**Meta:** Confirmar diagnóstico e planejar Fase 2
 
-**Próximos passos (14-15/10):**
+**Próximos passos:**
 - Implementar noise injection nos scripts 005 e 006
 - Treinar Stage 3-RECT e Stage 3-AB robustos
 - Re-avaliar pipeline
@@ -733,7 +781,7 @@ pesquisa_v6/
 ## 🧪 Experimentos Flatten (ARQUIVADOS - NEGATIVOS)
 
 **Branch:** `feat/stage2-flatten-9classes` (merged to main em 904e0aa)  
-**Duração:** ~3 dias (10-13 outubro 2025)  
+**Duração:** 10-13 outubro 2025  
 **Status:** ❌ **ABANDONADO** - Resultados negativos
 
 ### Resumo dos Experimentos
@@ -819,13 +867,13 @@ pesquisa_v6/
 
 </details>
 
-## 🤝 Próximo Passo Imediato (14/10/2025)
+## 🤝 Próximo Passo Imediato
 
 **⚠️ Ver detalhes completos em:** [`PROXIMOS_PASSOS.md`](./PROXIMOS_PASSOS.md)
 
 ### Ação: Iniciar Experimento 10 (Confusion-Based Noise)
 
-**Manhã (14/10 - 4h):**
+**Protocolo:**
 ```bash
 # Criar Script 009: Análise de Confusion Matrix Stage 2
 cd pesquisa_v6/scripts
@@ -835,18 +883,19 @@ python3 009_analyze_stage2_confusion.py \
   --output ../logs/v6_experiments/confusion_matrix_stage2.json
 ```
 
+**Sequência de validação:**
 ```bash
-# 1. Dia 1 manhã: Diagnose Stage 3-RECT (2h)
+# 1. Diagnose Stage 3-RECT
 python3 pesquisa_v6/scripts/009_diagnose_stage3_rect.py
 
-# 2. Dia 1 tarde: Threshold grid search (2h)
+# 2. Threshold grid search
 python3 pesquisa_v6/scripts/010_threshold_grid_search.py
 
-# 3. Dia 2-3: Strong augmentation (1 dia) - SE NECESSÁRIO
+# 3. Strong augmentation (SE NECESSÁRIO)
 python3 pesquisa_v6/scripts/004_train_stage2_redesigned.py \
   --mixup-alpha 0.4 --cutmix-beta 1.0 --epochs 30
 
-# 4. Dia 4: Pipeline re-evaluation + análise
+# 4. Pipeline re-evaluation + análise
 python3 pesquisa_v6/scripts/008_run_pipeline_eval_v6.py
 ```
 

@@ -1,6 +1,6 @@
 # PROBLEMA CRÍTICO IDENTIFICADO: Stage 2 Model Colapsado
 
-**Data:** 13/10/2025 19:30  
+**Data:** 13/10/2025  
 **Responsável:** Chiaro Rosa  
 **Status:** 🚨 CRÍTICO - BLOQUEADOR do Experimento 10
 
@@ -87,7 +87,7 @@ GT AB   :      0   14529       0
 
 ## 🔬 Diagnóstico Necessário (URGENTE)
 
-### Ação 1: Verificar Modelo Final ⏱️ 10 minutos
+### Ação 1: Verificar Modelo Final
 
 ```bash
 python3 pesquisa_v6/scripts/009_analyze_stage2_confusion.py \
@@ -99,7 +99,7 @@ python3 pesquisa_v6/scripts/009_analyze_stage2_confusion.py \
 
 **Esperado:** Se final model tem F1 > 0%, então best model foi salvo no momento errado.
 
-### Ação 2: Verificar History do Treinamento ⏱️ 5 minutos
+### Ação 2: Verificar History do Treinamento
 
 ```python
 import torch
@@ -114,7 +114,7 @@ for epoch in range(len(history['val_f1'])):
     print(f"Epoch {epoch}: F1={history['val_f1'][epoch]:.4f}, Acc={history['val_accuracy'][epoch]:.4f}")
 ```
 
-### Ação 3: Retreinar Stage 2 (Se Necessário) ⏱️ 2 horas
+### Ação 3: Retreinar Stage 2 (Se Necessário)
 
 **Se ambos os modelos (best e final) estão colapsados:**
 
@@ -156,32 +156,56 @@ python3 pesquisa_v6/scripts/004_train_stage2_redesigned.py \
 
 ---
 
-## 🎯 Decisão Crítica (HOJE - 13/10/2025 à noite)
+## 🎯 DECISÃO RECOMENDADA
 
-### Opção A: Diagnosticar e Corrigir (2-4 horas)
-1. Verificar `stage2_model_final.pt` (10 min)
-2. Analisar history (5 min)
-3. Se necessário: Retreinar Stage 2 (2h)
-4. Revalidar Exp 09 (30 min)
+### Primeira Prioridade: Opção A (Usar Modelo Frozen) ⭐
 
-**Cronograma afetado:** Exp 10 atrasa 1 dia (início 15/10 em vez de 14/10)
+**Razões:**
+1. ✅ **Mais rápido** (menos complexidade)
+2. ✅ **Menor risco** (modelo frozen já provou F1=0.4651)
+3. ✅ **Validação científica** (confirma hipótese de que frozen > unfrozen)
+4. ✅ **Mantém foco** (Exp 10 pode prosseguir)
 
-### Opção B: Investigar Raiz do Problema (4-8 horas - RECOMENDADO)
-1. Analisar por que Stage 2 colapsou (pode ser bug sistemático)
-2. Verificar se é problema de arquitetura ou treinamento
-3. Implementar salvamento de checkpoints robusto
-4. Retreinar com monitoramento detalhado
-
-**Cronograma afetado:** Exp 10 atrasa 2 dias (início 16/10)
-
-### Opção C: Usar Modelo Alternativo (Exp 11 direto)
-- Pular Exp 10 (Confusion-Based Noise)
-- Ir direto para Exp 11 (Train-with-Predictions com Stage 2 real-time)
-- Gerar predições Stage 2 durante treinamento Stage 3
-
-**Cronograma:** Mantém prazo (início 14/10), mas muda estratégia
+**Se Opção A falhar** (modelo frozen não disponível e retreino frozen também colapsa):
+→ Tentar **Opção C** (Train-with-Predictions)
+→ Pular Opção B (retreinar completo é alto custo, baixo ganho esperado)
 
 ---
+
+## 📝 Próxima Ação Imediata
+
+### 1. Verificar Existência de Checkpoint Frozen 🔴 URGENTE
+
+```bash
+cd /home/chiarorosa/CNN_AV1
+ls -lh pesquisa_v6/logs/v6_experiments/stage2/ | grep -E "ep[0-9]|frozen"
+```
+
+**Se encontrar `stage2_model_ep0.pt` ou similar:**
+✅ Executar Script 009 nele e validar F1 ~0.46
+
+**Se NÃO encontrar:**
+⚠️ Retreinar 1 época frozen
+
+### 2. Atualizar Documentação 🟡
+
+- ✅ PROBLEMA_CRITICO_STAGE2.md criado
+- ✅ PROXIMOS_PASSOS.md atualizado
+- ⏳ Criar `docs_v6/10_stage2_collapse_analysis.md` (PhD-level)
+
+### 3. Push das Mudanças 🟡
+
+```bash
+git add pesquisa_v6/PROXIMOS_PASSOS.md .github/copilot-instructions.md
+git commit -m "docs: Remover estimativas de tempo/datas dos documentos"
+git push origin main
+```
+
+---
+
+**⚠️ PRÓXIMA AÇÃO:** Executar diagnóstico do `stage2_model_final.pt` ou localizar checkpoint frozen.
+
+**Decisão pendente:** Qual opção (A, B ou C) seguir após diagnóstico.
 
 ## 📝 Ações Imediatas (HOJE - 13/10/2025)
 

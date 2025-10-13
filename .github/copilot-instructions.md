@@ -20,6 +20,7 @@ This doctoral research develops deep learning methods to predict **AV1 video cod
 3. **PhD-Level Creativity:** Propose novel solutions inspired by state-of-the-art (transformers, adapters, meta-learning, etc.)
 4. **Reproducibility:** Document all experiments with protocols, hyperparameters, seeds, artifacts
 5. **Critical Analysis:** Question assumptions, identify limitations, compare against baselines
+6. **NO TIME ESTIMATES:** Never specify dates, deadlines, hours, or days of effort. Focus on technical steps and decisions only.
 
 ## Architecture Philosophy
 

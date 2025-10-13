@@ -1,6 +1,6 @@
-# Próximos Passos - Pipeline V6 (Atualizado 13/10/2025 - 20:00)
+# Próximos Passos - Pipeline V6
 
-**Última Atualização:** 13/10/2025 20:00  
+**Última Atualização:** 13/10/2025  
 **Status:** 🚨 **PROBLEMA CRÍTICO IDENTIFICADO** - Stage 2 colapsado, Experimento 10 bloqueado  
 **Responsável:** @chiarorosa
 
@@ -8,7 +8,7 @@
 
 ## 🚨 PROBLEMA CRÍTICO: Stage 2 Model Colapsado
 
-### Descoberta (13/10/2025 19:30)
+### Descoberta (13/10/2025)
 
 Durante a implementação do Script 009 (análise de confusion matrix), **descobriu-se que o modelo Stage 2 está completamente colapsado**:
 
@@ -50,9 +50,9 @@ Durante a implementação do Script 009 (análise de confusion matrix), **descob
 
 ---
 
-## 🎯 PLANO DE AÇÃO REVISADO (13-18/10/2025)
+## 🎯 PLANO DE AÇÃO REVISADO
 
-### Opção A: Usar Modelo Frozen (RECOMENDADO - 1 dia) ⭐
+### Opção A: Usar Modelo Frozen (RECOMENDADO) ⭐
 
 **Fundamentação:**
 - Época 0 (frozen) tinha F1=0.4651 ✅ Melhor que unfrozen
@@ -60,13 +60,13 @@ Durante a implementação do Script 009 (análise de confusion matrix), **descob
 - Unfreezing causou colapso → **não usar unfrozen**
 
 **Protocolo:**
-1. **Localizar checkpoint frozen (época 0)** - 10 min
+1. **Localizar checkpoint frozen (época 0)**
    ```bash
    # Verificar se existe stage2_model_block16_ep0.pt
    ls -lh pesquisa_v6/logs/v6_experiments/stage2/
    ```
 
-2. **Se NÃO existe, retreinar apenas época 0** - 30 min
+2. **Se NÃO existe, retreinar apenas época 0**
    ```bash
    python3 pesquisa_v6/scripts/004_train_stage2_redesigned.py \
      --dataset-dir pesquisa_v6/v6_dataset/block_16 \
@@ -77,7 +77,7 @@ Durante a implementação do Script 009 (análise de confusion matrix), **descob
      --save-every-epoch  # NOVO argumento
    ```
 
-3. **Validar modelo frozen** - 15 min
+3. **Validar modelo frozen**
    ```bash
    python3 pesquisa_v6/scripts/009_analyze_stage2_confusion.py \
      --stage2-model pesquisa_v6/logs/v6_experiments/stage2_frozen/stage2_model_ep0.pt \
@@ -87,7 +87,7 @@ Durante a implementação do Script 009 (análise de confusion matrix), **descob
    
    **Esperado:** F1 ~0.46-0.47, accuracy ~48-49%
 
-4. **Re-avaliar Pipeline Experimento 09** - 30 min
+4. **Re-avaliar Pipeline Experimento 09**
    ```bash
    python3 pesquisa_v6/scripts/008_run_pipeline_eval_v6.py \
      --stage1-model pesquisa_v6/logs/v6_experiments/stage1/stage1_model_best.pt \
@@ -99,22 +99,22 @@ Durante a implementação do Script 009 (análise de confusion matrix), **descob
    
    **Verificar:** Accuracy ≈ 45.86% (Exp09) ou melhorou?
 
-5. **Prosseguir Experimento 10** - 3 dias
+5. **Prosseguir Experimento 10**
    - Usar confusion matrix do modelo frozen
    - Implementar confusion-based noise injection
    - Retreinar Stage 3 com noise realista
 
-**Cronograma:**
-- **14/10 (Segunda):** Retreinar Stage 2 frozen + validar + re-avaliar pipeline
-- **15/10 (Terça):** Implementar confusion-based labels
-- **16-17/10 (Quarta-Quinta):** Retreinar Stage 3 com noise
-- **18/10 (Sexta):** Avaliação final e decisão
+**Sequência de passos:**
+- Retreinar Stage 2 frozen + validar + re-avaliar pipeline
+- Implementar confusion-based labels
+- Retreinar Stage 3 com noise
+- Avaliação final e decisão
 
 **Ganho esperado:** +1.5-2.5pp (45.86% → 47.5-48.5%)
 
 ---
 
-### Opção B: Retreinar Stage 2 Completo (2-3 dias)
+### Opção B: Retreinar Stage 2 Completo
 
 **Fundamentação:**
 - Implementar salvamento de checkpoints a cada época
@@ -155,19 +155,19 @@ for i, class_name in enumerate(['SPLIT', 'RECT', 'AB']):
     print(f"  {class_name}: F1={f1_class:.4f}")
 ```
 
-**Cronograma:**
-- **14/10:** Modificar Script 004 com melhorias (2h)
-- **14/10:** Retreinar Stage 2 com monitoring (2h)
-- **15/10:** Validar melhor checkpoint (30min)
-- **15/10:** Análise confusion matrix (30min)
-- **16-17/10:** Experimento 10 (Confusion-Based Noise)
-- **18/10:** Avaliação e decisão
+**Sequência de passos:**
+- Modificar Script 004 com melhorias
+- Retreinar Stage 2 com monitoring
+- Validar melhor checkpoint
+- Análise confusion matrix
+- Experimento 10 (Confusion-Based Noise)
+- Avaliação e decisão
 
 **Risco:** Pode não resolver catastrophic forgetting (é problema arquitetural)
 
 ---
 
-### Opção C: Pular Exp 10 → Ir Direto para Train-with-Predictions (3 dias)
+### Opção C: Pular Exp 10 → Ir Direto para Train-with-Predictions
 
 **Fundamentação:**
 - Confusion-based noise é aproximação de train-with-predictions
@@ -208,11 +208,11 @@ class TrainWithPredictionsDataset(Dataset):
 - Mais complexo de implementar
 - Custo computacional maior (forward pass Stage 2 durante treinamento)
 
-**Cronograma:**
-- **14/10:** Implementar TrainWithPredictionsDataset (4h)
-- **15/10:** Validar implementação (2h)
-- **16-17/10:** Retreinar Stage 3 RECT e AB (1.5d)
-- **18/10:** Avaliação e decisão
+**Sequência de passos:**
+- Implementar TrainWithPredictionsDataset
+- Validar implementação
+- Retreinar Stage 3 RECT e AB
+- Avaliação e decisão
 
 **Ganho esperado:** +1.0-2.0pp (experimental, sem baseline na literatura para video codecs)
 
@@ -223,10 +223,10 @@ class TrainWithPredictionsDataset(Dataset):
 ### Primeira Prioridade: Opção A (Usar Modelo Frozen) ⭐
 
 **Razões:**
-1. ✅ **Mais rápido** (1 dia vs 2-3 dias)
+1. ✅ **Mais rápido** (menos passos vs outras opções)
 2. ✅ **Menor risco** (modelo frozen já provou F1=0.4651)
 3. ✅ **Validação científica** (confirma hipótese de que frozen > unfrozen)
-4. ✅ **Mantém cronograma** (Exp 10 inicia 15/10)
+4. ✅ **Mantém foco** (Exp 10 pode prosseguir)
 
 **Se Opção A falhar** (modelo frozen não disponível e retreino frozen também colapsa):
 → Tentar **Opção C** (Train-with-Predictions)
@@ -234,7 +234,7 @@ class TrainWithPredictionsDataset(Dataset):
 
 ---
 
-## 📝 Próxima Ação Imediata (HOJE - 13/10/2025 à noite)
+## 📝 Próxima Ação Imediata
 
 ### 1. Verificar Existência de Checkpoint Frozen 🔴 URGENTE
 
@@ -247,7 +247,7 @@ ls -lh pesquisa_v6/logs/v6_experiments/stage2/ | grep -E "ep[0-9]|frozen"
 ✅ Executar Script 009 nele e validar F1 ~0.46
 
 **Se NÃO encontrar:**
-⚠️ Retreinar 1 época frozen amanhã (14/10 manhã, 30 min)
+⚠️ Retreinar 1 época frozen
 
 ### 2. Atualizar Documentação 🟡
 
@@ -258,26 +258,29 @@ ls -lh pesquisa_v6/logs/v6_experiments/stage2/ | grep -E "ep[0-9]|frozen"
 ### 3. Push das Mudanças 🟡
 
 ```bash
-git add pesquisa_v6/PROXIMOS_PASSOS.md
-git commit -m "docs: Atualizar PROXIMOS_PASSOS com Opção A/B/C pós-diagnóstico Stage 2"
+git add pesquisa_v6/PROXIMOS_PASSOS.md .github/copilot-instructions.md
+git commit -m "docs: Remover estimativas de tempo/datas dos documentos"
 git push origin main
 ```
 
 ---
 
-## 🗓️ Cronograma Revisado (14-20/10/2025)
+## 🎯 Sequência de Execução (Próximos Passos)
 
-| Data | Atividade | Duração | Status |
-|------|-----------|---------|--------|
-| **13/10 (Domingo)** | Script 009 + Diagnóstico Stage 2 | 4h | ✅ COMPLETO |
-| **14/10 (Segunda) AM** | Retreinar Stage 2 frozen (1 época) | 30min | 🔴 PRÓXIMO |
-| **14/10 (Segunda) PM** | Validar frozen + Re-avaliar pipeline | 1h | 🔴 PRÓXIMO |
-| **15/10 (Terça)** | Implementar confusion-based labels | 1d | ⏳ |
-| **16-17/10 (Qua-Qui)** | Retreinar Stage 3 com confusion noise | 1.5d | ⏳ |
-| **18/10 (Sexta)** | Avaliação Exp 10 + Checkpoint decisão | 0.5d | ⏳ |
-| **19-20/10 (Sáb-Dom)** | Buffer para ajustes / Exp 10.1-10.2 | 2d | ⏳ |
+**Fase 1: Resolver Stage 2**
+1. Verificar/retreinar modelo frozen
+2. Validar confusion matrix com Script 009
+3. Re-avaliar pipeline Exp 09 (verificar se resultados são válidos)
 
-**Meta Final:** Accuracy ≥48.0% até 20/10/2025
+**Fase 2: Experimento 10**
+1. Implementar confusion-based labels nos Scripts 005/006
+2. Retreinar Stage 3 RECT e AB com noise realista
+3. Avaliar pipeline completo
+
+**Fase 3: Checkpoint de Decisão**
+- Se Accuracy ≥48.0% → ✅ Finalizar Pipeline v6
+- Se 47.5-48.0% → Tentar otimizações rápidas (grid search, ensemble)
+- Se <47.5% → Reavaliar estratégia (Train-with-Predictions ou outras técnicas)
 
 ---
 
