@@ -4,7 +4,8 @@ Script 004b: Train Stage 2 Flat (7-way Direct Classification)
 
 Flatten Architecture: Stage 2 predicts 7 partition types directly
 Classes: HORZ, VERT, SPLIT, HORZ_A, HORZ_B, VERT_A, VERT_B
-No Stage 3 needed → eliminates cascade error (-95% degradation)
+No Stage 3 needed → eliminates cascade error (-95% degradatio        # Compute metrics at end of epoch
+        epoch_metrics = compute_metrics(result['labels'], result['preds']))
 
 Key Design Decisions (Literature-Based):
 1. **Class-Balanced Focal Loss** (Cui et al., 2019)
@@ -154,16 +155,13 @@ class Stage2FlatModel(nn.Module):
     Stage 2 Flat: 7-way direct classification
     Architecture: ResNet-18 (ImageNet pretrained) + SE blocks + Spatial Attention + 7-class head
     """
-    def __init__(self, num_classes=7, pretrained=True, dropout_rates=None):
+    def __init__(self, num_classes=7, pretrained=True):
         super().__init__()
         
         # Import backbone from v6_pipeline.models
         from models import ImprovedBackbone
         
-        self.backbone = ImprovedBackbone(
-            pretrained=pretrained,
-            dropout_rates=dropout_rates or [0.1, 0.2, 0.3, 0.4]
-        )
+        self.backbone = ImprovedBackbone(pretrained=pretrained)
         
         # 7-class classification head
         self.head = nn.Sequential(
@@ -178,7 +176,6 @@ class Stage2FlatModel(nn.Module):
         print(f"  Stage2FlatModel initialized:")
         print(f"    Backbone: ResNet-18 (pretrained={pretrained})")
         print(f"    Output classes: {num_classes}")
-        print(f"    Dropout rates: {dropout_rates or [0.1, 0.2, 0.3, 0.4]}")
     
     def forward(self, x):
         features = self.backbone(x)  # (B, 512)
@@ -278,7 +275,7 @@ def train_epoch(model, dataloader, criterion, optimizer, device, epoch, freeze_b
     
     # Compute epoch metrics
     result = metrics.get_average()
-    epoch_metrics = compute_metrics(result['labels'], result['preds'], num_classes=7)
+    epoch_metrics = compute_metrics(result['labels'], result['preds'])
     epoch_metrics['loss'] = result['loss']
     
     return epoch_metrics
@@ -306,7 +303,7 @@ def validate_epoch(model, dataloader, criterion, device, epoch):
     
     # Compute epoch metrics
     result = metrics.get_average()
-    epoch_metrics = compute_metrics(result['labels'], result['preds'], num_classes=7)
+    epoch_metrics = compute_metrics(result['labels'], result['preds'])
     epoch_metrics['loss'] = result['loss']
     
     return epoch_metrics
@@ -401,14 +398,8 @@ def train_stage2_flat(
     # -----------------------------------------------------------------------
     print(f"[1/7] Loading datasets...")
     
-    # Augmentation for training
-    train_augmentation = Stage2Augmentation(
-        geometric_prob=0.5,
-        mixup_prob=0.4,
-        mixup_alpha=0.5,
-        cutmix_prob=0.5,
-        cutmix_beta=1.0
-    )
+    # Augmentation for training (Stage2Augmentation includes geometric + Cutout + GridShuffle)
+    train_augmentation = Stage2Augmentation(train=True)
     
     train_dataset = FlattenDataset(
         dataset_dir / "train.pt",
@@ -459,8 +450,7 @@ def train_stage2_flat(
     
     model = Stage2FlatModel(
         num_classes=7,
-        pretrained=True,
-        dropout_rates=[0.1, 0.2, 0.3, 0.4]
+        pretrained=True
     ).to(device)
     
     # -----------------------------------------------------------------------
@@ -476,14 +466,11 @@ def train_stage2_flat(
     
     criterion = ClassBalancedFocalLoss(
         samples_per_class=class_counts.tolist(),
-        num_classes=7,
         beta=beta,
-        gamma=gamma,
-        label_smoothing=label_smoothing,
-        device=device
+        gamma=gamma
     )
     
-    print(f"    Loss: CB-Focal (β={beta}, γ={gamma}, ε={label_smoothing})")
+    print(f"    Loss: CB-Focal (β={beta}, γ={gamma})")
     print(f"    Class counts: {class_counts.tolist()}")
     
     # Discriminative learning rates (Howard & Ruder, 2018)
@@ -565,8 +552,9 @@ def train_stage2_flat(
         print(f"    Accuracy: {val_metrics['accuracy']:.4f}")
         print(f"    Macro F1: {val_metrics['macro_f1']:.4f}")
         print(f"  Per-class F1:")
-        for class_id, f1 in enumerate(val_metrics['per_class_f1']):
+        for class_id in range(7):
             class_name = FLATTEN_ID_TO_NAME.get(class_id, f"Class_{class_id}")
+            f1 = val_metrics['per_class'].get(f'class_{class_id}', {}).get('f1', 0.0)
             print(f"    {class_name:20s}: {f1:.4f}")
         
         # Update history
@@ -576,7 +564,9 @@ def train_stage2_flat(
         history['val_loss'].append(val_metrics['loss'])
         history['val_accuracy'].append(val_metrics['accuracy'])
         history['val_macro_f1'].append(val_metrics['macro_f1'])
-        history['val_per_class_f1'].append(val_metrics['per_class_f1'])
+        # Extract per-class F1 values for history
+        per_class_f1_list = [val_metrics['per_class'].get(f'class_{i}', {}).get('f1', 0.0) for i in range(7)]
+        history['val_per_class_f1'].append(per_class_f1_list)
         
         # Save checkpoint if best F1
         if val_metrics['macro_f1'] > best_f1:
