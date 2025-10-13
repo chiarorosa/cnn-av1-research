@@ -17,10 +17,11 @@
 ### 2. Experimentos
 - `03_experimento_ulmfit.md` - Tentativa de solução com ULMFiT (Howard & Ruder, 2018)
 - `04_experimento_train_from_scratch.md` - Train from Scratch (Kornblith et al., 2019)
+- `05_avaliacao_pipeline_completo.md` - ✅ **Avaliação End-to-End do Pipeline Hierárquico**
 
 ### 3. Análises
-- `05_analise_comparativa.md` - Comparação quantitativa dos modelos
-- `06_insights_e_conclusoes.md` - Insights científicos e conclusões
+- `06_analise_comparativa.md` - Comparação quantitativa dos modelos
+- `07_insights_e_conclusoes.md` - Insights científicos e conclusões
 
 ### 4. Metodologia
 - `07_metodologia_experimental.md` - Protocolos, datasets, métricas
@@ -105,6 +106,7 @@ Negative transfer entre tarefas dissimilares (Yosinski et al., 2014):
 - **07/10/2025:** Experimento 1 - ULMFiT (falhou)
 - **13/10/2025:** Experimento 2 - Train from Scratch (parcial)
 - **13/10/2025:** Documentação técnico-científica criada
+- **13/10/2025:** ✅ **Pipeline completo avaliado - Decisão final tomada**
 
 ---
 
@@ -112,9 +114,11 @@ Negative transfer entre tarefas dissimilares (Yosinski et al., 2014):
 
 As figuras estão localizadas em cada documento específico. Para inclusão na tese:
 
-- **Tabela 1:** Comparação Stage 1 init vs ImageNet-only (`05_analise_comparativa.md`)
+- **Tabela 1:** Comparação Stage 1 init vs ImageNet-only (`06_analise_comparativa.md`)
+- **Tabela 2:** ⭐ Comparação Pipeline Frozen vs Scratch (`05_avaliacao_pipeline_completo.md`)
 - **Figura 1:** Evolução F1 por época (`04_experimento_train_from_scratch.md`)
 - **Figura 2:** Arquitetura hierárquica (`01_problema_negative_transfer.md`)
+- **Figura 3:** ⭐ Erro em cascata RECT/AB (`05_avaliacao_pipeline_completo.md`)
 
 ---
 
@@ -122,11 +126,13 @@ As figuras estão localizadas em cada documento específico. Para inclusão na t
 
 1. Yosinski et al. (2014) - "How transferable are features in deep neural networks?"
 2. Howard & Ruder (2018) - "Universal Language Model Fine-tuning" (ULMFiT)
-3. Kornblith et al. (2019) - "Do Better ImageNet Models Transfer Better?"
+3. Kornblith et al. (2019) - ⭐ **VALIDADO** - "Do Better ImageNet Models Transfer Better?"
 4. Cui et al. (2019) - "Class-Balanced Loss Based on Effective Number of Samples"
 5. Raghu et al. (2019) - "Transfusion: Understanding Transfer Learning"
+6. He et al. (2016) - ⭐ **VALIDADO** - "Deep Residual Learning for Image Recognition"
+7. Sun et al. (2017) - ⭐ **VALIDADO** - "Revisiting Unreasonable Effectiveness of Data"
 
 ---
 
 **Última Atualização:** 13 de outubro de 2025  
-**Status:** Em progresso - Experimento 2 concluído, aguardando decisão de próxima abordagem
+**Status:** ✅ **CONCLUÍDO** - Pipeline V6 otimizado com Train from Scratch (Accuracy 47.66%, meta 48%)
