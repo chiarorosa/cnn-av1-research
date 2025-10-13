@@ -37,6 +37,19 @@ PARTITION_ID_TO_NAME: Dict[int, str] = {
 
 PARTITION_NAME_TO_ID = {name: idx for idx, name in PARTITION_ID_TO_NAME.items()}
 
+# Flatten architecture: 7 classes (NONE removed, HORZ_4/VERT_4 don't exist in dataset)
+FLATTEN_ID_TO_NAME: Dict[int, str] = {
+    0: "PARTITION_HORZ",
+    1: "PARTITION_VERT",
+    2: "PARTITION_SPLIT",
+    3: "PARTITION_HORZ_A",
+    4: "PARTITION_HORZ_B",
+    5: "PARTITION_VERT_A",
+    6: "PARTITION_VERT_B",
+}
+
+FLATTEN_NAME_TO_ID = {name: idx for idx, name in FLATTEN_ID_TO_NAME.items()}
+
 BLOCK_SIZES = ("8", "16", "32", "64")
 
 # ---------------------------------------------------------------------------
@@ -496,6 +509,10 @@ def compute_class_distribution_v6(labels: Iterable[int]) -> Dict[str, float]:
 
 
 __all__ = [
+    'PARTITION_ID_TO_NAME',
+    'PARTITION_NAME_TO_ID',
+    'FLATTEN_ID_TO_NAME',
+    'FLATTEN_NAME_TO_ID',
     'STAGE2_GROUPS_V6',
     'STAGE3_GROUPS_V6',
     'STAGE2_NAME_TO_ID_V6',
