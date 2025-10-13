@@ -1,8 +1,292 @@
-# Próximos Passos - Pipeline V6 (Atualizado 13/10/2025)
+# Próximos Passos - Pipeline V6 (Atualizado 13/10/2025 - 20:00)
 
-**Última Atualização:** 13/10/2025 18:30  
-**Status:** Experimento 09 completo, planejando Experimento 10  
+**Última Atualização:** 13/10/2025 20:00  
+**Status:** 🚨 **PROBLEMA CRÍTICO IDENTIFICADO** - Stage 2 colapsado, Experimento 10 bloqueado  
 **Responsável:** @chiarorosa
+
+---
+
+## 🚨 PROBLEMA CRÍTICO: Stage 2 Model Colapsado
+
+### Descoberta (13/10/2025 19:30)
+
+Durante a implementação do Script 009 (análise de confusion matrix), **descobriu-se que o modelo Stage 2 está completamente colapsado**:
+
+**Modelo Best (stage2_model_best.pt):**
+- Prediz **RECT (classe 1) para 100%** das amostras
+- Accuracy: 46.44% (= prevalência de RECT no dataset)
+- F1 macro: 0.21 (SPLIT=0.0, RECT=0.63, AB=0.0)
+
+**Modelo Final (stage2_model_final.pt):**
+- Prediz **SPLIT (classe 0) para 99.99%** das amostras
+- Accuracy: 15.58%
+- F1 macro: 0.09
+
+**Análise do History:**
+- Época 0 (frozen backbone): F1=0.4651 ✅ Melhor performance
+- Épocas 1-7: Estável ~0.44-0.46
+- **Época 8:** **COLAPSO** - F1=0.3439, Acc=0.3868 ❌
+- Épocas 9-29: Nunca recuperou (~0.33-0.37)
+
+### Causa Identificada
+
+**Catastrophic Forgetting Severo** ao unfreeze do backbone (época 7→8):
+- Backbone Stage 1 features incompatíveis com Stage 2 task
+- Unfreezing destruiu features aprendidas durante frozen training
+- Consistente com documentado em `docs_v6/01_problema_negative_transfer.md`
+
+### Impacto
+
+🚫 **BLOQUEIA Experimento 10 (Confusion-Based Noise Injection)**
+- Exp 10 requer confusion matrix realista do Stage 2
+- Com modelo colapsado, matriz é trivial (tudo prediz uma classe)
+- Noise injection seria inútil
+
+⚠️ **INVALIDA Experimento 09?**
+- Se Stage 2 já estava colapsado durante pipeline evaluation:
+  * Stage 3 recebeu inputs não-diversificados (só RECT ou só SPLIT)
+  * Resultados (45.86% accuracy) podem estar incorretos
+  * **NECESSÁRIO:** Re-avaliar pipeline com Stage 2 funcional
+
+---
+
+## 🎯 PLANO DE AÇÃO REVISADO (13-18/10/2025)
+
+### Opção A: Usar Modelo Frozen (RECOMENDADO - 1 dia) ⭐
+
+**Fundamentação:**
+- Época 0 (frozen) tinha F1=0.4651 ✅ Melhor que unfrozen
+- Script 004 foi projetado para salvar checkpoint frozen
+- Unfreezing causou colapso → **não usar unfrozen**
+
+**Protocolo:**
+1. **Localizar checkpoint frozen (época 0)** - 10 min
+   ```bash
+   # Verificar se existe stage2_model_block16_ep0.pt
+   ls -lh pesquisa_v6/logs/v6_experiments/stage2/
+   ```
+
+2. **Se NÃO existe, retreinar apenas época 0** - 30 min
+   ```bash
+   python3 pesquisa_v6/scripts/004_train_stage2_redesigned.py \
+     --dataset-dir pesquisa_v6/v6_dataset/block_16 \
+     --epochs 1 \
+     --batch-size 128 \
+     --output-dir pesquisa_v6/logs/v6_experiments/stage2_frozen \
+     --device cuda \
+     --save-every-epoch  # NOVO argumento
+   ```
+
+3. **Validar modelo frozen** - 15 min
+   ```bash
+   python3 pesquisa_v6/scripts/009_analyze_stage2_confusion.py \
+     --stage2-model pesquisa_v6/logs/v6_experiments/stage2_frozen/stage2_model_ep0.pt \
+     --dataset-dir pesquisa_v6/v6_dataset/block_16 \
+     --device cuda
+   ```
+   
+   **Esperado:** F1 ~0.46-0.47, accuracy ~48-49%
+
+4. **Re-avaliar Pipeline Experimento 09** - 30 min
+   ```bash
+   python3 pesquisa_v6/scripts/008_run_pipeline_eval_v6.py \
+     --stage1-model pesquisa_v6/logs/v6_experiments/stage1/stage1_model_best.pt \
+     --stage2-model pesquisa_v6/logs/v6_experiments/stage2_frozen/stage2_model_ep0.pt \
+     --stage3-rect-model pesquisa_v6/logs/.../stage3_rect_robust.pt \
+     --stage3-ab-models <ensemble> \
+     --output-dir pesquisa_v6/logs/v6_experiments/pipeline_eval_frozen_s2
+   ```
+   
+   **Verificar:** Accuracy ≈ 45.86% (Exp09) ou melhorou?
+
+5. **Prosseguir Experimento 10** - 3 dias
+   - Usar confusion matrix do modelo frozen
+   - Implementar confusion-based noise injection
+   - Retreinar Stage 3 com noise realista
+
+**Cronograma:**
+- **14/10 (Segunda):** Retreinar Stage 2 frozen + validar + re-avaliar pipeline
+- **15/10 (Terça):** Implementar confusion-based labels
+- **16-17/10 (Quarta-Quinta):** Retreinar Stage 3 com noise
+- **18/10 (Sexta):** Avaliação final e decisão
+
+**Ganho esperado:** +1.5-2.5pp (45.86% → 47.5-48.5%)
+
+---
+
+### Opção B: Retreinar Stage 2 Completo (2-3 dias)
+
+**Fundamentação:**
+- Implementar salvamento de checkpoints a cada época
+- Monitorar F1 por classe durante treinamento
+- Adicionar early stopping baseado em F1 macro (não loss)
+
+**Modificações no Script 004:**
+```python
+# 1. Salvar checkpoint a cada época
+if (epoch + 1) % 1 == 0:
+    save_checkpoint(
+        model, optimizer, epoch,
+        f'stage2_model_ep{epoch}.pt'
+    )
+
+# 2. Early stopping baseado em F1
+best_f1 = 0
+patience = 10
+patience_counter = 0
+
+for epoch in range(epochs):
+    val_f1 = validate_epoch(...)
+    
+    if val_f1 > best_f1:
+        best_f1 = val_f1
+        patience_counter = 0
+        save_checkpoint(model, 'best')
+    else:
+        patience_counter += 1
+    
+    if patience_counter >= patience:
+        print(f"Early stopping at epoch {epoch}")
+        break
+
+# 3. Monitorar F1 por classe
+for i, class_name in enumerate(['SPLIT', 'RECT', 'AB']):
+    f1_class = f1_score(y_true, y_pred, labels=[i], average='macro')
+    print(f"  {class_name}: F1={f1_class:.4f}")
+```
+
+**Cronograma:**
+- **14/10:** Modificar Script 004 com melhorias (2h)
+- **14/10:** Retreinar Stage 2 com monitoring (2h)
+- **15/10:** Validar melhor checkpoint (30min)
+- **15/10:** Análise confusion matrix (30min)
+- **16-17/10:** Experimento 10 (Confusion-Based Noise)
+- **18/10:** Avaliação e decisão
+
+**Risco:** Pode não resolver catastrophic forgetting (é problema arquitetural)
+
+---
+
+### Opção C: Pular Exp 10 → Ir Direto para Train-with-Predictions (3 dias)
+
+**Fundamentação:**
+- Confusion-based noise é aproximação de train-with-predictions
+- Se vamos usar predições reais, melhor usar direto (não confusion matrix)
+- Heigold et al. (2016): Treinar com predições do modelo upstream
+
+**Protocolo:**
+```python
+# 1. Gerar predições Stage 2 em tempo real
+class TrainWithPredictionsDataset(Dataset):
+    def __init__(self, stage2_model, stage3_dataset):
+        self.stage2_model = stage2_model
+        self.stage3_dataset = stage3_dataset
+    
+    def __getitem__(self, idx):
+        block, gt_label, qp = self.stage3_dataset[idx]
+        
+        # Computar predição Stage 2 (frozen, sem grad)
+        with torch.no_grad():
+            stage2_logits = self.stage2_model(block.unsqueeze(0))
+            stage2_pred = torch.argmax(stage2_logits, dim=1).item()
+        
+        # 75% usa GT, 25% usa predição Stage 2
+        if random.random() < 0.75:
+            return block, gt_label, qp  # Clean
+        else:
+            # Mapear predição Stage 2 → Stage 3 labels
+            mapped_label = map_stage2_to_stage3(stage2_pred, head='RECT')
+            return block, mapped_label, qp  # Noisy (real prediction)
+```
+
+**Vantagens:**
+- Noise é **exatamente** o que Stage 3 verá em pipeline real
+- Não depende de confusion matrix (robusta a Stage 2 colapsado)
+- Mais próximo de "online learning" (adapta a predições reais)
+
+**Desvantagens:**
+- Mais complexo de implementar
+- Custo computacional maior (forward pass Stage 2 durante treinamento)
+
+**Cronograma:**
+- **14/10:** Implementar TrainWithPredictionsDataset (4h)
+- **15/10:** Validar implementação (2h)
+- **16-17/10:** Retreinar Stage 3 RECT e AB (1.5d)
+- **18/10:** Avaliação e decisão
+
+**Ganho esperado:** +1.0-2.0pp (experimental, sem baseline na literatura para video codecs)
+
+---
+
+## 🎯 DECISÃO RECOMENDADA
+
+### Primeira Prioridade: Opção A (Usar Modelo Frozen) ⭐
+
+**Razões:**
+1. ✅ **Mais rápido** (1 dia vs 2-3 dias)
+2. ✅ **Menor risco** (modelo frozen já provou F1=0.4651)
+3. ✅ **Validação científica** (confirma hipótese de que frozen > unfrozen)
+4. ✅ **Mantém cronograma** (Exp 10 inicia 15/10)
+
+**Se Opção A falhar** (modelo frozen não disponível e retreino frozen também colapsa):
+→ Tentar **Opção C** (Train-with-Predictions)
+→ Pular Opção B (retreinar completo é alto custo, baixo ganho esperado)
+
+---
+
+## 📝 Próxima Ação Imediata (HOJE - 13/10/2025 à noite)
+
+### 1. Verificar Existência de Checkpoint Frozen 🔴 URGENTE
+
+```bash
+cd /home/chiarorosa/CNN_AV1
+ls -lh pesquisa_v6/logs/v6_experiments/stage2/ | grep -E "ep[0-9]|frozen"
+```
+
+**Se encontrar `stage2_model_ep0.pt` ou similar:**
+✅ Executar Script 009 nele e validar F1 ~0.46
+
+**Se NÃO encontrar:**
+⚠️ Retreinar 1 época frozen amanhã (14/10 manhã, 30 min)
+
+### 2. Atualizar Documentação 🟡
+
+- ✅ PROBLEMA_CRITICO_STAGE2.md criado
+- ✅ PROXIMOS_PASSOS.md atualizado
+- ⏳ Criar `docs_v6/10_stage2_collapse_analysis.md` (PhD-level)
+
+### 3. Push das Mudanças 🟡
+
+```bash
+git add pesquisa_v6/PROXIMOS_PASSOS.md
+git commit -m "docs: Atualizar PROXIMOS_PASSOS com Opção A/B/C pós-diagnóstico Stage 2"
+git push origin main
+```
+
+---
+
+## 🗓️ Cronograma Revisado (14-20/10/2025)
+
+| Data | Atividade | Duração | Status |
+|------|-----------|---------|--------|
+| **13/10 (Domingo)** | Script 009 + Diagnóstico Stage 2 | 4h | ✅ COMPLETO |
+| **14/10 (Segunda) AM** | Retreinar Stage 2 frozen (1 época) | 30min | 🔴 PRÓXIMO |
+| **14/10 (Segunda) PM** | Validar frozen + Re-avaliar pipeline | 1h | 🔴 PRÓXIMO |
+| **15/10 (Terça)** | Implementar confusion-based labels | 1d | ⏳ |
+| **16-17/10 (Qua-Qui)** | Retreinar Stage 3 com confusion noise | 1.5d | ⏳ |
+| **18/10 (Sexta)** | Avaliação Exp 10 + Checkpoint decisão | 0.5d | ⏳ |
+| **19-20/10 (Sáb-Dom)** | Buffer para ajustes / Exp 10.1-10.2 | 2d | ⏳ |
+
+**Meta Final:** Accuracy ≥48.0% até 20/10/2025
+
+---
+
+## 📖 ARQUIVADO: Plano Original Experimento 10 (Pré-Descoberta)
+
+<details>
+<summary>Clique para expandir cronograma original (mantido para registro histórico)</summary>
+
+## 🎯 Experimento 10: Confusion-Based Noise Injection
 
 ---
 
