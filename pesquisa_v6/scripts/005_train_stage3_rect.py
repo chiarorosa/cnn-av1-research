@@ -105,10 +105,15 @@ class NoisyDataset(torch.utils.data.Dataset):
         else:
             # Return noisy sample with random label
             noise_idx = idx - n_clean
+            # Round-robin distribution across noise sources
             source_idx = noise_idx % len(self.noise_datasets)
             noise_ds, noise_indices = self.noise_datasets[source_idx]
             
-            sample_idx = noise_indices[noise_idx // len(self.noise_datasets)]
+            # Calculate local index within the specific noise dataset
+            local_idx = noise_idx // len(self.noise_datasets)
+            # Wrap around if we exceed the dataset size (shouldn't happen with correct total_len)
+            local_idx = local_idx % len(noise_indices)
+            sample_idx = noise_indices[local_idx]
             batch = noise_ds[sample_idx]
             
             # Replace label with random HORZ (0) or VERT (1)
