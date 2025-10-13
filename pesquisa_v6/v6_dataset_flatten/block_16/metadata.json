@@ -1,0 +1,120 @@
+{
+  "architecture": "flatten",
+  "description": "Stage 2 predicts 9 classes directly (PARTITION only, NONE filtered)",
+  "block_size": "16",
+  "num_classes": 9,
+  "class_names": [
+    "PARTITION_HORZ",
+    "PARTITION_VERT",
+    "PARTITION_SPLIT",
+    "PARTITION_HORZ_A",
+    "PARTITION_HORZ_B",
+    "PARTITION_VERT_A",
+    "PARTITION_VERT_B",
+    "PARTITION_HORZ_4",
+    "PARTITION_VERT_4"
+  ],
+  "label_mapping": {
+    "original_range": "0-9 (10 classes)",
+    "flatten_range": "0-8 (9 classes)",
+    "mapping": {
+      "PARTITION_HORZ": "1 \u2192 0",
+      "PARTITION_VERT": "2 \u2192 1",
+      "PARTITION_SPLIT": "3 \u2192 2",
+      "PARTITION_HORZ_A": "4 \u2192 3",
+      "PARTITION_HORZ_B": "5 \u2192 4",
+      "PARTITION_VERT_A": "6 \u2192 5",
+      "PARTITION_VERT_B": "7 \u2192 6",
+      "PARTITION_HORZ_4": "8 \u2192 7",
+      "PARTITION_VERT_4": "9 \u2192 8"
+    },
+    "removed": "PARTITION_NONE (0) handled by Stage 1"
+  },
+  "train_samples": 152600,
+  "val_samples": 38256,
+  "train_distribution": {
+    "PARTITION_HORZ": {
+      "count": 32675,
+      "percentage": 21.412188728702493
+    },
+    "PARTITION_VERT": {
+      "count": 38703,
+      "percentage": 25.362385321100916
+    },
+    "PARTITION_SPLIT": {
+      "count": 23942,
+      "percentage": 15.689384010484927
+    },
+    "PARTITION_HORZ_A": {
+      "count": 13915,
+      "percentage": 9.118610747051115
+    },
+    "PARTITION_HORZ_B": {
+      "count": 14459,
+      "percentage": 9.475098296199214
+    },
+    "PARTITION_VERT_A": {
+      "count": 14684,
+      "percentage": 9.62254259501966
+    },
+    "PARTITION_VERT_B": {
+      "count": 14222,
+      "percentage": 9.319790301441678
+    },
+    "PARTITION_HORZ_4": {
+      "count": 0,
+      "percentage": 0.0
+    },
+    "PARTITION_VERT_4": {
+      "count": 0,
+      "percentage": 0.0
+    }
+  },
+  "val_distribution": {
+    "PARTITION_HORZ": {
+      "count": 8147,
+      "percentage": 21.296005855290673
+    },
+    "PARTITION_VERT": {
+      "count": 9618,
+      "percentage": 25.141154328732746
+    },
+    "PARTITION_SPLIT": {
+      "count": 5962,
+      "percentage": 15.5844834797156
+    },
+    "PARTITION_HORZ_A": {
+      "count": 3628,
+      "percentage": 9.483479715600167
+    },
+    "PARTITION_HORZ_B": {
+      "count": 3537,
+      "percentage": 9.24560853199498
+    },
+    "PARTITION_VERT_A": {
+      "count": 3794,
+      "percentage": 9.917398578000837
+    },
+    "PARTITION_VERT_B": {
+      "count": 3570,
+      "percentage": 9.331869510664994
+    },
+    "PARTITION_HORZ_4": {
+      "count": 0,
+      "percentage": 0.0
+    },
+    "PARTITION_VERT_4": {
+      "count": 0,
+      "percentage": 0.0
+    }
+  },
+  "imbalance_stats": {
+    "max_class_count": 38703,
+    "min_class_count": 13915,
+    "imbalance_ratio": "2.8:1",
+    "most_frequent": "PARTITION_VERT",
+    "least_frequent": "PARTITION_HORZ_4"
+  },
+  "source_dataset": "/home/chiarorosa/CNN_AV1/pesquisa_v6/v6_dataset/block_16",
+  "output_directory": "/home/chiarorosa/CNN_AV1/pesquisa_v6/v6_dataset_flatten/block_16"
+}
