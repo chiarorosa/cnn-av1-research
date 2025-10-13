@@ -35,6 +35,93 @@ from augmentation import Stage2Augmentation
 from metrics import compute_binary_metrics, MetricsTracker
 
 
+class NoisyDataset(torch.utils.data.Dataset):
+    """
+    Dataset with noise injection for adversarial training.
+    
+    Mixes clean RECT samples with noisy samples from other classes (AB, SPLIT).
+    Noisy samples are assigned random labels to simulate Stage 2 misclassification.
+    
+    References:
+    - Hendrycks et al., 2019: "Using Pre-Training Can Improve Model Robustness"
+    - Natarajan et al., 2013: "Learning with Noisy Labels"
+    
+    Args:
+        clean_dataset: Original RECT dataset (clean samples)
+        noise_records: List of BlockRecord objects from noise sources (AB, SPLIT)
+        noise_ratio: Fraction of dataset to be noise (0.0-1.0)
+        augmentation: Augmentation to apply
+        seed: Random seed for reproducibility
+    """
+    def __init__(self, clean_dataset, noise_records, noise_ratio=0.25, augmentation=None, seed=42):
+        from data_hub import BlockRecord, build_hierarchical_dataset_v6
+        
+        self.clean_dataset = clean_dataset
+        self.noise_ratio = noise_ratio
+        self.augmentation = augmentation
+        
+        # Calculate sample counts
+        total_samples = len(clean_dataset)
+        n_clean = int(total_samples * (1 - noise_ratio))
+        n_noise = total_samples - n_clean
+        
+        # Create clean indices
+        rng = np.random.RandomState(seed)
+        clean_indices = rng.choice(len(clean_dataset), n_clean, replace=False)
+        self.clean_indices = sorted(clean_indices)
+        
+        # Create noise datasets from each source
+        self.noise_datasets = []
+        if noise_records:
+            per_source = n_noise // len(noise_records)
+            for noise_record in noise_records:
+                noise_ds = build_hierarchical_dataset_v6(
+                    noise_record, 
+                    augmentation=augmentation, 
+                    stage='stage3_rect'  # Use same stage structure
+                )
+                # Sample random indices from noise source
+                noise_indices = rng.choice(len(noise_ds), per_source, replace=False)
+                self.noise_datasets.append((noise_ds, noise_indices))
+        
+        self.total_len = n_clean + n_noise
+        
+        print(f"\n[NoisyDataset] Created with:")
+        print(f"  Clean samples: {n_clean} ({(1-noise_ratio)*100:.1f}%)")
+        print(f"  Noise samples: {n_noise} ({noise_ratio*100:.1f}%)")
+        print(f"  Noise sources: {len(noise_records)}")
+        print(f"  Total samples: {self.total_len}")
+    
+    def __len__(self):
+        return self.total_len
+    
+    def __getitem__(self, idx):
+        n_clean = len(self.clean_indices)
+        
+        if idx < n_clean:
+            # Return clean sample
+            clean_idx = self.clean_indices[idx]
+            return self.clean_dataset[clean_idx]
+        else:
+            # Return noisy sample with random label
+            noise_idx = idx - n_clean
+            # Round-robin distribution across noise sources
+            source_idx = noise_idx % len(self.noise_datasets)
+            noise_ds, noise_indices = self.noise_datasets[source_idx]
+            
+            # Calculate local index within the specific noise dataset
+            local_idx = noise_idx // len(self.noise_datasets)
+            # Wrap around if we exceed the dataset size (shouldn't happen with correct total_len)
+            local_idx = local_idx % len(noise_indices)
+            sample_idx = noise_indices[local_idx]
+            batch = noise_ds[sample_idx]
+            
+            # Replace label with random HORZ (0) or VERT (1)
+            batch['label_stage3_RECT'] = torch.tensor(np.random.randint(0, 2), dtype=torch.long)
+            
+            return batch
+
+
 class BatchMetricsAccumulator:
     """Accumulates metrics across batches"""
     def __init__(self):
@@ -189,6 +276,13 @@ def main():
     parser.add_argument("--seed", type=int, default=42,
                        help="Random seed")
     
+    # Noise Injection arguments (Hendrycks et al., 2019)
+    parser.add_argument("--noise-injection", type=float, default=0.0,
+                       help="Fraction of noisy samples to inject (0.0-1.0). E.g., 0.25 = 25%% noise")
+    parser.add_argument("--noise-sources", nargs='+', 
+                       choices=['AB', 'SPLIT'], default=['AB'],
+                       help="Sources for noisy samples: AB (Stage 3-AB), SPLIT (PARTITION_SPLIT)")
+    
     args = parser.parse_args()
     
     # Set seed
@@ -203,7 +297,10 @@ def main():
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     print(f"\n{'='*70}")
     print(f"  Training Stage 3-RECT - Binary Classification (HORZ vs VERT)")
-    print(f"  IMPROVEMENTS v2: Label Smoothing + Gradient Clip + Early Stop")
+    if args.noise_injection > 0:
+        print(f"  IMPROVEMENTS v3: Noise Injection + Label Smoothing + Early Stop")
+    else:
+        print(f"  IMPROVEMENTS v2: Label Smoothing + Gradient Clip + Early Stop")
     print(f"{'='*70}")
     print(f"  Device: {device}")
     print(f"  Dataset: {dataset_dir}")
@@ -213,6 +310,8 @@ def main():
     print(f"  Learning rate: {args.lr} (head) / {args.lr*0.01:.2e} (backbone)")
     print(f"  Loss: CrossEntropy + Class Weights + Label Smoothing (0.1)")
     print(f"  Regularization: Gradient Clipping (norm=1.0)")
+    if args.noise_injection > 0:
+        print(f"  Noise Injection: {args.noise_injection*100:.1f}% from sources {args.noise_sources}")
     
     # Load datasets
     print(f"\n[1/5] Loading datasets...")
@@ -249,8 +348,84 @@ def main():
         qps=val_qps.reshape(-1, 1)
     )
     
-    train_dataset = build_hierarchical_dataset_v6(train_record, augmentation=train_aug, stage='stage3_rect')
+    # Create clean datasets first
+    train_dataset_clean = build_hierarchical_dataset_v6(train_record, augmentation=train_aug, stage='stage3_rect')
     val_dataset = build_hierarchical_dataset_v6(val_record, augmentation=val_aug, stage='stage3_rect')
+    
+    # Apply Noise Injection if specified (Hendrycks et al., 2019)
+    if args.noise_injection > 0:
+        print(f"\n[Noise Injection] Loading noise sources...")
+        noise_records = []
+        
+        # Find project root (go up from dataset_dir until we find pesquisa_v6)
+        project_root = dataset_dir
+        while project_root.name != 'pesquisa_v6' and project_root.parent != project_root:
+            project_root = project_root.parent
+        
+        v6_dataset_dir = project_root / "v6_dataset"
+        v6_stage3_dir = project_root / "v6_dataset_stage3"
+        
+        if 'AB' in args.noise_sources:
+            ab_path = v6_stage3_dir / "AB" / "block_16" / "train.pt"
+            if ab_path.exists():
+                print(f"  Loading AB samples from: {ab_path}")
+                ab_data = torch.load(ab_path, weights_only=False)
+                ab_samples = ab_data['samples'] if isinstance(ab_data['samples'], np.ndarray) else ab_data['samples'].numpy()
+                ab_labels = ab_data['labels'] if isinstance(ab_data['labels'], np.ndarray) else ab_data['labels'].numpy()
+                ab_qps = ab_data['qps'] if isinstance(ab_data['qps'], np.ndarray) else ab_data['qps'].numpy()
+                
+                ab_record = BlockRecord(
+                    samples=ab_samples,
+                    labels=ab_labels,
+                    qps=ab_qps.reshape(-1, 1)
+                )
+                noise_records.append(ab_record)
+            else:
+                print(f"  WARNING: AB dataset not found at {ab_path}")
+        
+        if 'SPLIT' in args.noise_sources:
+            main_path = v6_dataset_dir / "block_16" / "train.pt"
+            if main_path.exists():
+                print(f"  Loading SPLIT samples from: {main_path}")
+                main_data = torch.load(main_path, weights_only=False)
+                main_samples = main_data['samples'] if isinstance(main_data['samples'], np.ndarray) else main_data['samples'].numpy()
+                main_labels = main_data['labels_stage0'] if isinstance(main_data['labels_stage0'], np.ndarray) else main_data['labels_stage0'].numpy()
+                main_qps = main_data['qps'] if isinstance(main_data['qps'], np.ndarray) else main_data['qps'].numpy()
+                
+                # Convert from (N, C, H, W) to (N, H, W, C) format
+                if main_samples.shape[1] == 1:  # Check if it's (N, C, H, W)
+                    main_samples = np.transpose(main_samples, (0, 2, 3, 1))
+                
+                # Filter SPLIT only (label = 3)
+                split_mask = main_labels == 3
+                split_samples = main_samples[split_mask]
+                split_labels = main_labels[split_mask]
+                split_qps = main_qps[split_mask]
+                
+                print(f"    Found {len(split_samples)} SPLIT samples")
+                
+                split_record = BlockRecord(
+                    samples=split_samples,
+                    labels=split_labels,
+                    qps=split_qps.reshape(-1, 1)
+                )
+                noise_records.append(split_record)
+            else:
+                print(f"  WARNING: Main dataset not found at {main_path}")
+        
+        if noise_records:
+            train_dataset = NoisyDataset(
+                train_dataset_clean, 
+                noise_records, 
+                noise_ratio=args.noise_injection,
+                augmentation=train_aug,
+                seed=args.seed
+            )
+        else:
+            print("  WARNING: No noise sources found, using clean dataset")
+            train_dataset = train_dataset_clean
+    else:
+        train_dataset = train_dataset_clean
     
     # Create dataloaders
     train_loader = DataLoader(

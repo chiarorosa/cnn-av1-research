@@ -14,17 +14,20 @@
 - `01_problema_negative_transfer.md` - Análise do problema de negative transfer no Stage 2
 - `02_literatura_base.md` - Revisão bibliográfica das técnicas aplicadas
 
-### 2. Experimentos
+### 2. Experimentos - Stage 2
 - `03_experimento_ulmfit.md` - Tentativa de solução com ULMFiT (Howard & Ruder, 2018)
 - `04_experimento_train_from_scratch.md` - Train from Scratch (Kornblith et al., 2019)
+
+### 3. Avaliação de Pipeline
 - `05_avaliacao_pipeline_completo.md` - ✅ **Avaliação End-to-End do Pipeline Hierárquico**
 
-### 3. Análises
-- `06_analise_comparativa.md` - Comparação quantitativa dos modelos
-- `07_insights_e_conclusoes.md` - Insights científicos e conclusões
+### 4. Arquiteturas Alternativas
+- `06_arquitetura_flatten_9classes.md` - Análise de pipeline flat (9 classes direto)
+- `07_flatten_pipeline_evaluation.md` - Avaliação quantitativa do modelo flat
 
-### 4. Metodologia
-- `07_metodologia_experimental.md` - Protocolos, datasets, métricas
+### 5. Robustez e Erro Cascata
+- `08_pipeline_aware_training.md` - Experimentos com pipeline-aware training
+- `09_noise_injection_stage3.md` - ✅ **Adversarial Training com Noise Injection para Stage 3**
 
 ---
 
@@ -50,18 +53,31 @@ Negative transfer entre tarefas dissimilares (Yosinski et al., 2014):
 - **Resultado:** F1=8.99% (frozen) → 37.38% (unfrozen) ✅ sem degradação
 - **Conclusão:** Elimina catastrophic forgetting, mas F1 inferior ao Stage 1 init (46.51%)
 
+#### Experimento 3: Pipeline Completo (SUCESSO)
+- **Técnica:** Avaliação end-to-end com Stage 2 frozen (F1=46.51%)
+- **Resultado:** Pipeline Accuracy=47.66%, meta ≥48% ❌ **MAS** erro cascata Stage 3 identificado
+- **Conclusão:** Stage 2 funciona bem, mas Stage 3 degrada -93% (standalone 68%→pipeline 4%)
+
+#### Experimento 4: Noise Injection Stage 3 (PARCIAL)
+- **Técnica:** Adversarial training com 25% noise injection (Hendrycks et al., 2019)
+- **Resultado:** Cascade error reduzido -93%→-65%, mas Accuracy=47.66%→45.86% (-1.80pp) ❌
+- **Conclusão:** ✅ Confirma Distribution Shift, ⚠️ Trade-off robustez vs accuracy
+
 ### Insights Científicos
 
 1. **Stage 1 features SÃO úteis** (46.51% > 37.38% ImageNet-only)
 2. **ULMFiT insuficiente** para adaptar features entre tarefas hierárquicas
 3. **Frozen-only viável** - F1=46.51% atinge meta (≥45%)
-4. **Trade-off confirmado:** Adaptabilidade vs Performance inicial
+4. ⭐ **Erro cascata é o problema principal** - Stage 3 degrada -93% no pipeline
+5. **Distribution Shift confirmado** - Noise injection reduz cascade error mas com trade-off
 
 ### Próximas Direções
 
-1. **Opção 2 (Recomendada):** Usar Stage 1 model frozen (F1=46.51%)
-2. **Opção 3:** Adapter layers (Rebuffi et al., 2017)
-3. **Opção 4:** Arquitetura multi-task com shared backbone
+1. **H3.2: Confusion-Based Noise Injection** - Usar matriz de confusão real do Stage 2 (não labels aleatórios)
+2. **Train-with-Predictions** - Substituir noise sintético por predições reais do Stage 2
+3. **Ensemble Real para AB** - Treinar 3 modelos AB independentes (não repetir 1 modelo)
+4. **Adapter Layers** (Rebuffi et al., 2017) - Para Stage 2 fine-tuning sem forgetting
+5. **End-to-End Pipeline Training** - Treinar todos os stages juntos com backpropagation
 
 ---
 
@@ -74,7 +90,8 @@ Negative transfer entre tarefas dissimilares (Yosinski et al., 2014):
 ### Para Tese - Capítulo de Resultados
 1. Ler `03_experimento_ulmfit.md`
 2. Ler `04_experimento_train_from_scratch.md`
-3. Ler `05_analise_comparativa.md`
+3. Ler `05_avaliacao_pipeline_completo.md`
+4. ⭐ Ler `09_noise_injection_stage3.md` (Robustez e Erro Cascata)
 
 ### Para Tese - Capítulo de Discussão
 1. Ler `01_problema_negative_transfer.md`
@@ -106,7 +123,8 @@ Negative transfer entre tarefas dissimilares (Yosinski et al., 2014):
 - **07/10/2025:** Experimento 1 - ULMFiT (falhou)
 - **13/10/2025:** Experimento 2 - Train from Scratch (parcial)
 - **13/10/2025:** Documentação técnico-científica criada
-- **13/10/2025:** ✅ **Pipeline completo avaliado - Decisão final tomada**
+- **13/10/2025:** ✅ **Pipeline completo avaliado - Erro cascata identificado**
+- **13/10/2025:** ✅ **Experimento 4 - Noise Injection (parcial) - Distribution Shift confirmado**
 
 ---
 
@@ -131,6 +149,8 @@ As figuras estão localizadas em cada documento específico. Para inclusão na t
 5. Raghu et al. (2019) - "Transfusion: Understanding Transfer Learning"
 6. He et al. (2016) - ⭐ **VALIDADO** - "Deep Residual Learning for Image Recognition"
 7. Sun et al. (2017) - ⭐ **VALIDADO** - "Revisiting Unreasonable Effectiveness of Data"
+8. Hendrycks et al. (2019) - ⭐ **APLICADO** - "Using Pre-Training Can Improve Model Robustness"
+9. Natarajan et al. (2013) - ⭐ **APLICADO** - "Learning with Noisy Labels"
 
 ---
 
