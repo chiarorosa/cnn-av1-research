@@ -26,22 +26,20 @@ O pipeline v6 é uma reformulação completa da arquitetura hierárquica, focand
 | **Script 006 (Stage 3-AB)** | ✅ Validado | F1=24.50% (4/4 classes, época 6) |
 | **Script 007 (Threshold)** | ✅ Validado | threshold=0.45 → F1=72.79% |
 | **Script 008 (Pipeline)** | ✅ Validado | Accuracy=47.66% (meta: 48%, gap: -0.34pp) |
-| **Script 009 (Compare v5/v6)** | ⏳ Próximo | Último script do pipeline |
-
 ---
 
 ## 🎯 Objetivos e Metas
 
 ### Métricas Alvo (block_16)
 
-| Componente | v5 Atual | v6 Meta Fase 1 | v6 Meta Fase 2 | v6 Obtido (13/10) |
-|------------|----------|----------------|----------------|-------------------|
-| **Stage 1 F1** | 65.19% | 68-70% | 72-75% | ✅ **72.28%** |
-| **Stage 1 Precisão** | 53.71% | 62-65% | 68-72% | ✅ **67.13%** |
-| **Stage 2 Macro F1** | 33.41% | 45-50% | 55-60% | ✅ **46.51%** (frozen) |
-| **Stage 3-RECT F1** | 72.50% | 75-78% | 80-83% | ⚠️ **68.44%** |
-| **Stage 3-AB F1** | 25.26% | 45-50% | 60-65% | ⚠️ **24.50%** |
-| **Acurácia Final** | 39.56% | 48-52% | 58-63% | ⚠️ **47.66%** (-0.34pp da meta) |
+| Componente | Meta Fase 1 | Meta Fase 2 | v6 Obtido (13/10) | Status |
+|------------|-------------|-------------|-------------------|--------|
+| **Stage 1 F1** | 68-70% | 72-75% | ✅ **72.28%** | Meta Fase 2 atingida |
+| **Stage 1 Precisão** | 62-65% | 68-72% | ✅ **67.13%** | Meta Fase 1 atingida |
+| **Stage 2 Macro F1** | 45-50% | 55-60% | ✅ **46.51%** (frozen) | Meta Fase 1 atingida |
+| **Stage 3-RECT F1** | 75-78% | 80-83% | ⚠️ **68.44%** | **-6.6pp abaixo da meta** |
+| **Stage 3-AB F1** | 45-50% | 60-65% | ⚠️ **24.50%** | **-20.5pp abaixo da meta** |
+| **Acurácia Final** | 48-52% | 58-63% | ⚠️ **47.66%** | **-0.34pp abaixo da meta** |
 
 ---
 
@@ -214,93 +212,364 @@ O pipeline v6 é uma reformulação completa da arquitetura hierárquica, focand
 
 ---
 
-## 🎯 PRÓXIMOS PASSOS: Fechar Gap -0.34pp
+## 🎯 ANÁLISE DOS PROBLEMAS CRÍTICOS (Baseado em docs_v6/)
 
-### Estratégia: ROI Maximizado
-> "Começar com técnicas de baixo custo e alto impacto. Avaliar resultados antes de investir em soluções complexas."
+### Problema Central: Erro em Cascata Severo
 
-### Fase 1: Quick Wins (3-4 dias) - **RECOMENDADA**
+**Diagnóstico (doc 05_avaliacao_pipeline_completo.md):**
 
-**Objetivo:** Alcançar ≥48% accuracy  
-**Ganho Esperado:** +0.3-0.7pp → **Accuracy 47.9-48.4%** ✅
+| Componente | F1 Standalone | Accuracy Pipeline | Degradação |
+|------------|---------------|-------------------|------------|
+| Stage 3-RECT | 68.44% | **4.49%** | **-93.4%** ❌❌❌ |
+| Stage 3-AB | 24.50% | **1.51%** | **-93.8%** ❌❌❌ |
 
-#### 1.1 Investigar Stage 3-RECT Standalone (2h) 🔴 **ALTA PRIORIDADE**
+**Classes Colapsadas no Pipeline:**
+- HORZ: 0% F1 (9,618 samples preditos como 0)
+- HORZ_A: 0% F1
+- VERT_A: 0% F1
+- VERT_B: 0% F1
 
-**Problema:**
-> "Stage 3-RECT tem F1=68.44% standalone, mas apenas 4.49% no pipeline. Por quê?"
+**Root Cause Identificado:** Stage 2 confunde sistematicamente RECT vs AB
 
-**Hipóteses:**
-1. Modelo tem viés extremo para VERT (explica HORZ=0%)
-2. Modelo não generaliza para samples enviados erroneamente por Stage 2
-3. Dataset de treinamento desbalanceado
+### Hipóteses Testadas e REJEITADAS
 
-**Protocolo:**
-```bash
-# Script: pesquisa_v6/scripts/009_diagnose_stage3_rect.py
-python3 009_diagnose_stage3_rect.py \
-  --model pesquisa_v6/logs/v6_experiments/stage3_rect/stage3_rect_model_best.pt \
-  --dataset pesquisa_v6/v6_dataset_stage3/RECT/block_16/val.pt
+#### ❌ H2.1: Distribution Shift (doc 08_pipeline_aware_training.md)
 
-# Analisar:
-# - Confusion matrix standalone
-# - F1 per-class (HORZ vs VERT)
-# - Class distribution no dataset train
-```
+**Hipótese:**
+> "Stage 2 colapsa porque treinou com distribuição balanceada mas recebe distribuição filtrada por Stage 1."
 
-**Ações baseadas em resultados:**
-- Se HORZ F1 < 50% standalone → Retreinar com weighted loss (1 dia)
-- Se HORZ samples < 40% train → Rebalancear dataset (usar sampler)
+**Teste:**
+- Retreinar Stage 2 com 3,890 samples filtrados por Stage 1 (threshold 0.45)
+- **Resultado:** F1=6.74% (pior que baseline 31.65%) - **degradação de -78.7%**
 
-**Ganho:** +0.1-0.3pp
+**Conclusão:** REJEITADA - Distribution shift NÃO é a causa primária
 
-#### 1.2 Threshold Grid Search (2h) 🔴 **ALTA PRIORIDADE**
-
-**Problema:**
-> "Threshold Stage 1 = 0.45 foi otimizado isoladamente. No pipeline, pode estar enviando muitos false positives para Stage 2."
-
-**Protocolo:**
-```python
-# Script: pesquisa_v6/scripts/010_threshold_grid_search.py
-thresholds_stage1 = [0.40, 0.45, 0.50, 0.55]
-results = []
-
-for th1 in thresholds_stage1:
-    accuracy = run_pipeline(stage1_threshold=th1)
-    results.append({'th1': th1, 'accuracy': accuracy})
-
-best = max(results, key=lambda x: x['accuracy'])
-```
-
-**Custo:** 40 min runs + 1h análise = 2h  
-**Ganho:** +0.1-0.3pp
-
-#### 1.3 Stage 2 Strong Data Augmentation (1 dia) 🟡 **MÉDIA PRIORIDADE**
-
-**Problema:**
-> "Stage 2 F1=46.51% pode melhorar com augmentation mais agressiva."
-
-**Técnicas:**
-- **MixUp** (Zhang et al., 2018): α=0.4
-- **CutMix** (Yun et al., 2019): β=1.0
-- **Geometric Augmentations**: Flips + Rotation
-
-**Protocolo:**
-```bash
-python3 004_train_stage2_redesigned.py \
-  --epochs 30 \
-  --mixup-alpha 0.4 \
-  --cutmix-beta 1.0 \
-  --output-dir stage2_scratch_augstrong
-```
-
-**Custo:** 6h treinamento + 2h análise = 1 dia  
-**Ganho:** +0.2-0.4pp
-
-**Ganho Total Fase 1:** +0.4-1.0pp → **Accuracy 48.0-48.7%** ✅
+**Root causes reais identificados:**
+1. Dataset insuficiente (3,890 / 11M params = 1:2,900 ratio)
+2. Negative transfer (Stage 1 binary features ≠ Stage 2 multi-class)
+3. Architectural flaw (objetivos conflitantes)
 
 ---
 
-## 🔧 Melhorias Técnicas Implementadas (v6)
+## 🎯 PRÓXIMOS PASSOS: Resolver Erro em Cascata
+
+### Estratégia Baseada em Evidências
+> "Focar no problema real: Stage 2 confunde RECT vs AB, causando colapso dos Stage 3."
+
+### Fase 1: Diagnóstico Profundo (1-2 dias) - **CRÍTICO**
+
+#### 1.1 Analisar Confusão RECT vs AB no Stage 2 🔴 **CRÍTICO**
+
+**Problema Documentado (doc 05):**
+```
+Ground Truth: HORZ (RECT)
+    ↓
+Stage 2 Frozen classifica como: AB (ERRADO!)
+    ↓
+Envia para Stage 3-AB (que nunca viu HORZ!)
+    ↓
+Stage 3-AB colapsa → prediz HORZ_B (default)
+    ↓
+Resultado: HORZ_B (ERRADO!)
+```
+
+**Protocolo:**
+```bash
+# Script: pesquisa_v6/scripts/009_analyze_stage2_confusion.py
+
+# 1. Carregar Stage 2 frozen model
+# 2. Inferir validation set completo
+# 3. Analisar confusion matrix RECT vs AB
+# 4. Identificar padrões visuais que causam confusão
+# 5. Calcular % de RECT enviado erroneamente para Stage 3-AB
+```
+
+**Métricas-chave:**
+- Precision RECT (Stage 2): Quantos "RECT" são realmente RECT?
+- Recall AB (Stage 2): Quantos AB são corretamente identificados?
+- Taxa de "RECT → AB error": % de RECT enviados para Stage 3-AB
+
+**Ganho esperado:** Entendimento claro do erro cascata
+
+#### 1.2 Avaliar Viés do Stage 3-RECT (2h) � **CRÍTICO**
+
+**Problema Observado:** HORZ colapsou (0% F1), VERT superestimado (+16.19%)
+
+**Hipótese:** Stage 3-RECT tem viés extremo para VERT
+
+**Protocolo:**
+```bash
+# Script: pesquisa_v6/scripts/010_diagnose_stage3_rect.py
+
+python3 010_diagnose_stage3_rect.py \
+  --model logs/v6_experiments/stage3_rect/stage3_rect_model_best.pt \
+  --dataset v6_dataset_stage3/RECT/block_16/val.pt
+
+# Análises:
+# 1. Confusion matrix standalone (HORZ vs VERT)
+# 2. F1 per-class standalone  
+# 3. Distribuição de probabilidades
+# 4. Class distribution no dataset de treino
+```
+
+**Ações baseadas em resultado:**
+- Se HORZ F1 < 60% standalone → Retreinar com class weights
+- Se dataset desbalanceado (VERT > 60%) → Rebalancear com sampler
+
+**Ganho esperado:** +0.1-0.3pp (se viés confirmado e corrigido)
+
+### Fase 2: Soluções Robustas (3-5 dias) - **RECOMENDADA**
+
+**Objetivo:** Resolver confusão RECT vs AB + Robustez dos Stage 3
+
+#### 2.1 Noise Injection em Stage 3 (3 dias) � **ALTA PRIORIDADE**
+
+**Problema Fundamental:**
+> "Stage 3-RECT e Stage 3-AB foram treinados apenas com samples CORRETOS. No pipeline, recebem samples ERRADOS do Stage 2 e colapsam."
+
+**Solução:** Adversarial Training / Noise Injection
+- Treinar Stage 3 com 20-30% "dirty samples"
+- Simula distribuição real que Stage 3 receberá no pipeline
+- Modelo aprende robustez a erros do Stage 2
+
+**Stage 3-RECT Robusto:**
+```python
+# Durante treinamento
+for epoch in range(epochs):
+    for batch in dataloader_RECT:
+        x_rect, y_rect = batch
+        
+        # 20-30% das vezes, injetar sample AB
+        if np.random.rand() < 0.25:
+            idx = np.random.randint(len(dataset_AB))
+            x_noise, y_noise = dataset_AB[idx]
+            
+            # Substituir um sample RECT por AB
+            x_rect[0] = x_noise
+            y_rect[0] = np.random.choice([0, 1])  # Random label
+            
+        loss = criterion(model(x_rect), y_rect)
+```
+
+**Protocolo:**
+```bash
+# 1. Retreinar Stage 3-RECT com noise
+python3 005_train_stage3_rect.py \
+  --noise-injection 0.25 \
+  --noise-source AB \
+  --noise-source SPLIT \
+  --epochs 30 \
+  --output-dir logs/v6_experiments/stage3_rect_robust
+
+# 2. Retreinar Stage 3-AB com noise  
+python3 006_train_stage3_ab_fgvc.py \
+  --noise-injection 0.25 \
+  --noise-source RECT \
+  --noise-source SPLIT \
+  --epochs 30 \
+  --output-dir logs/v6_experiments/stage3_ab_robust
+
+# 3. Re-avaliar pipeline
+python3 008_run_pipeline_eval_v6.py \
+  --stage3-rect-model stage3_rect_robust/model_best.pt \
+  --stage3-ab-model stage3_ab_robust/model_best.pt
+```
+
+**Fundamentação Teórica:**
+- Hendrycks et al., 2019: "Using Pre-Training Can Improve Model Robustness"
+- Natarajan et al., 2013: "Learning with Noisy Labels"
+- Recht et al., 2019: "Do ImageNet Classifiers Generalize to ImageNet?"
+
+**Ganho Esperado:**
+- Stage 3-RECT pipeline accuracy: 4.49% → 15-25% (+234-457%)
+- Stage 3-AB pipeline accuracy: 1.51% → 5-10% (+231-562%)
+- Overall pipeline: **+1.0-2.5pp** → Accuracy 48.7-50.2% ✅✅
+
+**Custo:**
+- 1.5 dia retreino Stage 3-RECT (30 epochs)
+- 1.5 dia retreino Stage 3-AB (30 epochs)
+- 0.5 dia pipeline evaluation + análise
+- **Total:** 3.5 dias
+
+#### 2.2 Melhorar Separação RECT vs AB no Stage 2 (2 dias) 🟡 **MÉDIA PRIORIDADE**
+
+**Problema:** Stage 2 confunde RECT vs AB (causa do erro cascata)
+
+**Solução 1: Contrastive Learning**
+- Adicionar contrastive loss (Chen et al., 2020 - SimCLR)
+- Força backbone a separar melhor RECT vs AB no espaço de features
+
+```python
+# Adicionar ao treinamento Stage 2
+contrastive_loss = SimCLR_loss(features_rect, features_ab, temperature=0.5)
+total_loss = cb_focal_loss + 0.3 * contrastive_loss
+```
+
+**Solução 2: Focal Loss Tuning**
+- Testar γ=[2.0, 2.5, 3.0] (mais foco em hard examples)
+- Testar α customizado por classe (mais peso em AB/RECT)
+
+**Protocolo:**
+```bash
+# Grid search
+gammas = [2.0, 2.5, 3.0]
+for gamma in gammas:
+    python3 004_train_stage2_redesigned.py \
+      --gamma $gamma \
+      --epochs 25 \
+      --output-dir stage2_gamma${gamma}
+
+# Avaliar qual melhor separa RECT vs AB
+```
+
+**Ganho Esperado:** Stage 2 confusion RECT↔AB reduz 30-40% → +0.5-1.0pp pipeline
+
+**Custo:** 2 dias
+
+### Fase 3: Técnicas Avançadas (1-2 semanas) - **EXPLORATÓRIO**
+
+**Condição:** Fase 2 não atingiu 50% + disponibilidade de tempo
+
+#### 3.1 Multi-Task Learning Stage 2 (5 dias)
+
+**Problema:** Stage 2 não aprende geometria interna de RECT
+
+**Solução:** Dual-head architecture
+```python
+class MultiTaskStage2(nn.Module):
+    def __init__(self):
+        self.backbone = ImprovedBackbone()
+        
+        # Head principal: 3-way (SPLIT, RECT, AB)
+        self.head_3way = nn.Linear(512, 3)
+        
+        # Head auxiliar: 2-way (HORZ, VERT) - apenas para RECT
+        self.head_rect_geometry = nn.Linear(512, 2)
+        
+    def forward(self, x):
+        features = self.backbone(x)
+        pred_3way = self.head_3way(features)
+        pred_rect = self.head_rect_geometry(features)
+        return pred_3way, pred_rect
+
+# Loss
+loss = cb_focal_3way + 0.5 * cross_entropy_rect_geometry
+```
+
+**Vantagens:**
+- Backbone aprende features para HORZ vs VERT
+- Melhora separação RECT vs AB
+- Regularização implícita (Caruana, 1997)
+
+**Ganho esperado:** +0.5-1.0pp
+
+**Custo:** 5 dias
+
+#### 3.2 Stage 2.5 Intermediate (4 dias)
+
+**Problema:** Stage 3-RECT recebe samples ruins e colapsa
+
+**Solução:** Adicionar stage intermediário robusto
+
+```
+Stage 2 → RECT → Stage 2.5 (HORZ vs VERT, treinado com noise) → Output
+```
+
+**Diferença vs Stage 3-RECT:**
+- Stage 3-RECT: Treinou só com RECT limpos
+- Stage 2.5: Treina com RECT + 30% noise (AB + SPLIT)
+
+**Ganho esperado:** +0.3-0.8pp
+
+**Custo:** 4 dias
+
+---
+
+## 📊 Resumo de Prioridades
+
+| ID | Técnica | Fase | Custo | Ganho | Prioridade |
+|----|---------|------|-------|-------|------------|
+| 1.1 | Analisar Confusão RECT vs AB | 1 | 4h | Diagnóstico | 🔴🔴🔴 CRÍTICO |
+| 1.2 | Diagnose Stage 3-RECT Viés | 1 | 2h | +0.1-0.3pp | 🔴🔴🔴 CRÍTICO |
+| **2.1** | **Noise Injection Stage 3** | **2** | **3.5d** | **+1.0-2.5pp** | 🔴🔴🔴 **RECOMENDADO** |
+| 2.2 | Melhorar RECT vs AB (Stage 2) | 2 | 2d | +0.5-1.0pp | 🔴🔴 Alta |
+| 3.1 | Multi-Task Stage 2 | 3 | 5d | +0.5-1.0pp | 🟡 Exploratório |
+| 3.2 | Stage 2.5 Intermediate | 3 | 4d | +0.3-0.8pp | 🟡 Exploratório |
+
+---
+
+## 🎯 Recomendação Estratégica Final
+
+### **PLANO RECOMENDADO: Fase 1 + Fase 2 (5-7 dias)**
+
+```
+Dia 1: 
+  - 1.1 Analisar Confusão RECT vs AB (4h)
+  - 1.2 Diagnose Stage 3-RECT (2h)
+  - Decisão: Confirmar diagnóstico do erro cascata
+
+Dias 2-4:
+  - 2.1 Noise Injection Stage 3-RECT (1.5 dias)
+  - 2.1 Noise Injection Stage 3-AB (1.5 dias)
+  
+Dia 5:
+  - Re-avaliar pipeline com modelos robustos
+  - Análise de resultados
+
+Dias 6-7 (SE NECESSÁRIO):
+  - 2.2 Melhorar RECT vs AB com Focal Loss tuning
+```
+
+**Probabilidade de sucesso:** 70-85%  
+**Ganho esperado:** +1.0-3.0pp → **Accuracy 48.7-50.7%** ✅✅
+
+**Fundamentação:**
+- **Fase 1** confirma diagnóstico (erro cascata Stage 2→3)
+- **Fase 2 (2.1)** ataca causa raiz (Stage 3 não robusto a erros)
+- Técnica validada na literatura (Hendrycks et al., 2019; Natarajan et al., 2013)
+- Implementação relativamente simples
+- Risco baixo (pior caso: sem melhoria, mas não piora)
+
+---
+
+## � Ação Imediata Recomendada (HOJE - 13/10)
+
+### **COMEÇAR COM FASE 1: Diagnóstico Profundo**
+
+```bash
+# 1. Criar Script 009: Análise de Confusão RECT vs AB (2-3 horas)
+cd pesquisa_v6/scripts
+# Implementar 009_analyze_stage2_confusion.py
+# - Carregar Stage 2 frozen model
+# - Inferir validation set
+# - Gerar confusion matrix detalhada RECT vs AB
+# - Calcular taxa de erro Stage 2 → Stage 3
+
+# 2. Criar Script 010: Diagnose Stage 3-RECT (1-2 horas)
+# Implementar 010_diagnose_stage3_rect.py
+# - Avaliar Stage 3-RECT standalone
+# - Verificar viés VERT vs HORZ
+# - Analisar class distribution treino
+
+# 3. Executar diagnósticos (1 hora)
+python3 009_analyze_stage2_confusion.py
+python3 010_diagnose_stage3_rect.py
+
+# 4. Análise de resultados e decisão (1 hora)
+# - Confirmar hipótese de erro cascata
+# - Decidir: prosseguir para Fase 2 (Noise Injection)
+```
+
+**Meta do dia:** Confirmar diagnóstico e planejar Fase 2
+
+**Próximos passos (14-15/10):**
+- Implementar noise injection nos scripts 005 e 006
+- Treinar Stage 3-RECT e Stage 3-AB robustos
+- Re-avaliar pipeline
+
+---
+
+## �🔧 Melhorias Técnicas Implementadas (v6)
 
 ### 1. Backbone Upgrade
 ```python
