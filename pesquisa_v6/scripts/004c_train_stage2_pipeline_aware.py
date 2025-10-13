@@ -99,10 +99,40 @@ from collections import Counter
 # Add v6 pipeline to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "v6_pipeline"))
 from data_hub import FLATTEN_ID_TO_NAME
-from models import Stage1Model, Stage2FlatModel
+from models import Stage1Model, ImprovedBackbone
 from losses import ClassBalancedFocalLoss
 from augmentation import Stage2Augmentation
 from metrics import compute_metrics
+
+
+# ---------------------------------------------------------------------------
+# Stage 2 Flat Model Definition
+# ---------------------------------------------------------------------------
+
+class Stage2FlatModel(nn.Module):
+    """
+    Stage 2 Flat: 7-way direct classification
+    Architecture: ResNet-18 (ImageNet pretrained) + SE blocks + Spatial Attention + 7-class head
+    """
+    def __init__(self, num_classes=7, pretrained=True):
+        super().__init__()
+        
+        self.backbone = ImprovedBackbone(pretrained=pretrained)
+        
+        # 7-class classification head
+        self.head = nn.Sequential(
+            nn.Dropout(0.3),
+            nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(256, num_classes)
+        )
+    
+    def forward(self, x):
+        features = self.backbone(x)  # (B, 512)
+        logits = self.head(features)  # (B, 7)
+        return logits
 
 
 # ---------------------------------------------------------------------------
