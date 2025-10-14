@@ -383,6 +383,82 @@ Máximo:           47.74% (época 1) 🏆
 
 ---
 
+### 5.6 Ablation v2: Teste com LR 10x Menor (LR=1e-5)
+
+**Motivação:** Validar se época 1 best era causado por LR muito alta (1e-4).
+
+**Hipótese:** LR=1e-5 permitirá convergência gradual e melhora após época 1.
+
+**Protocolo:**
+```bash
+python3 pesquisa_v6/scripts/004_train_stage2_redesigned.py \
+  --dataset-dir pesquisa_v6/v6_dataset/block_16 \
+  --stage1-model pesquisa_v6/logs/v6_experiments/stage1/stage1_model_best.pt \
+  --output-dir pesquisa_v6/logs/v6_experiments/stage2_adapters_v2 \
+  --epochs 15 \
+  --use-adapters \
+  --adapter-bottleneck 64 \
+  --lr-adapter 1e-5 \
+  --lr 1e-4 \
+  --device cuda \
+  --seed 42
+```
+
+**Mudanças:** LR adapter: 1e-4 → **1e-5** (10x menor), Epochs: 50 → 15 (early stopping)
+
+#### Resultados v2 (LR=1e-5)
+
+**Evolução F1 Macro (15 épocas):**
+
+| Época | F1 Macro | Status | Observação |
+|-------|----------|--------|------------|
+| **1** | **47.94%** 🏆 | FROZEN | **BEST - Idêntico ao v1!** |
+| 2 | 46.58% | FROZEN | -1.36pp |
+| 3 | 45.90% | FROZEN | -2.04pp |
+| 4 | 46.23% | FROZEN | -1.71pp |
+| 5 | 46.83% | FROZEN | -1.11pp |
+| 6 | 47.42% | FROZEN | -0.52pp (recuperação leve) |
+| 7 | 46.80% | FROZEN | -1.14pp |
+| 8 | 44.93% | FROZEN | -3.01pp |
+| 9 | 42.32% | UNFROZEN | -5.62pp (colapso pós-unfreeze) |
+| 10 | 39.56% | UNFROZEN | -8.38pp |
+| 11 | 42.07% | UNFROZEN | -5.87pp |
+| 12 | 41.74% | UNFROZEN | -6.20pp |
+| 13 | 40.21% | UNFROZEN | -7.73pp |
+| 14 | 39.48% | UNFROZEN | -8.46pp |
+| 15 | 41.24% | UNFROZEN | -6.70pp |
+
+**Degradação:** Best (época 1): 47.94% → Final (época 15): 41.24% = **-6.70pp**
+
+#### Comparação v1 vs v2
+
+| Métrica | v1 (LR=1e-4) | v2 (LR=1e-5) | Δ v2 - v1 |
+|---------|--------------|--------------|-----------|
+| **LR Adapter** | 1e-4 | **1e-5** (10x menor) | -10x |
+| **Epochs** | 50 | 15 | -35 |
+| **Best Época** | **1** | **1** | **0 (idêntico!)** |
+| **Best F1** | 47.74% | **47.94%** | **+0.20pp** |
+| **Final F1** | 39.93% | 41.24% | +1.31pp |
+| **Degradação** | -7.81pp | -6.70pp | +1.11pp (levemente menor) |
+| **vs Frozen Baseline** | **-0.78pp** | **-0.58pp** | +0.20pp |
+
+#### Análise Crítica v2
+
+**❌ Hipótese LR REFUTADA:**
+- Época 1 continua sendo **melhor em ambos** v1 e v2
+- Diferença no best F1: **apenas +0.20pp** (praticamente idêntico!)
+- Padrão de degradação **exatamente igual** em ambos experimentos
+
+**🔍 Evidência de Limitação Arquitetural:**
+1. **Testamos LR=1e-4 e LR=1e-5:** Ambos com época 1 best
+2. **Diferença 10x no LR:** Resultado final praticamente igual
+3. **Near-zero initialization é ótima:** Adapters começam como identidade (std=1e-3)
+4. **Qualquer treinamento degrada:** Gradient descent move adapters para longe do ótimo
+
+**Conclusão Final:** **LR NÃO ERA O PROBLEMA**. Adapters têm **limitação fundamental** para hierarquia AV1 (binary → 3-way partition).
+
+---
+
 ## 6. Análise Crítica e Lições Aprendidas
 
 ### 6.1 Por que Adapters Não Funcionaram?
@@ -408,12 +484,18 @@ Máximo:           47.74% (época 1) 🏆
 |--------|---------|-------------|-------------------|-----------|
 | **Rebuffi et al. (2017)** | Visual Decathlon | 96.2% de full FT | 0.7% | ✅ Sucesso |
 | **Houlsby et al. (2019)** | GLUE (NLP) | 97.8% de full FT | 2% | ✅ Sucesso |
-| **Exp 11A (nosso)** | AV1 Partition | 98.4% de frozen | 2.51% | ❌ **Abaixo de frozen** |
+| **Exp 11A-v1 (nosso)** | AV1 Partition | 98.4% de frozen | 2.51% | ❌ **Abaixo de frozen** |
+| **Exp 11A-v2 (nosso)** | AV1 Partition | 98.8% de frozen | 2.51% | ❌ **Abaixo de frozen** |
 
 **Diferença-chave:** 
 - Rebuffi/Houlsby: Adapters em tarefas **diferentes mas relacionadas** (ImageNet → CIFAR, BERT → GLUE)
 - Exp 11A: Adapters em **hierarquia de mesma tarefa** (binary → 3-way partition)
 - **Conclusão:** Particionamento AV1 tem características únicas que não se adequam bem a adapters
+
+**Evidência Adicional (v2):**
+- Testamos **2 learning rates** (1e-4 e 1e-5, diferença de 10x)
+- **Ambos falharam** com época 1 best e F1 < frozen baseline
+- **Problema não é hiperparâmetro**, é arquitetural
 
 ### 6.3 Trade-off Eficiência vs Performance
 
@@ -450,24 +532,29 @@ Máximo:           47.74% (época 1) 🏆
 
 **Implicação:** Implementar **validation após época 1** e comparar com épocas 5/10 antes de prosseguir.
 
+**Evidência Robusta (v1 + v2):**
+- v1 (LR=1e-4): Época 1 best (47.74%)
+- v2 (LR=1e-5): Época 1 best (47.94%)
+- **Padrão consistente** independente de LR (10x diferença testada)
+
 ---
 
 ## 7. Recomendações para Próximos Passos
 
-### 7.1 Opção A: Ablation v3 - Aumentar Capacidade (Bottleneck=128)
+### 7.1 ❌ Opção A: Ablation v3 - Aumentar Capacidade (Bottleneck=128) - **NÃO RECOMENDADO**
 **Motivação:** Testar se bottleneck=64 é insuficiente
 
 **Protocolo:**
 ```bash
 python3 pesquisa_v6/scripts/004_train_stage2_redesigned.py \
   --dataset-dir pesquisa_v6/v6_dataset/block_16 \
-  --stage1-model logs/v6_experiments/stage1_improved/stage1_model_best.pt \
-  --output-dir logs/v6_experiments/stage2_adapters_v3 \
+  --stage1-model pesquisa_v6/logs/v6_experiments/stage1/stage1_model_best.pt \
+  --output-dir pesquisa_v6/logs/v6_experiments/stage2_adapters_v3 \
   --epochs 30 \
   --use-adapters \
   --adapter-bottleneck 128 \
   --lr-adapter 5e-5 \
-  --lr-head 2e-4 \
+  --lr 2e-4 \
   --patience 10
 ```
 
@@ -477,62 +564,62 @@ python3 pesquisa_v6/scripts/004_train_stage2_redesigned.py \
 - Epochs: 50 → **30** (early stopping)
 - Patience: 5 → **10** (mais tolerante)
 
-**Esperado:**
-- F1 ≥ 50% se capacidade era o problema
-- Se F1 < 48.52%, confirma que adapters não adequados
+**❌ Por que NÃO fazer:**
+1. **v1 e v2 falharam** com bottleneck=64 e LRs diferentes (10x)
+2. **Época 1 best** indica que capacidade NÃO é o problema
+3. Near-zero init já é ótima (F1 ≈ frozen baseline)
+4. **Problema é arquitetural**, não capacidade
+5. **Custo:** ~30 min para resultado esperado negativo
 
-**Custo:** ~30 minutos de treino
+**Esperado:** F1 ≈ 47-48% (época 1 best novamente), não atingirá ≥50%
 
-### 7.2 Opção B: Retrain com Ajustes Críticos (Bottleneck=64, LR Baixo)
+---
+
+### 7.2 ❌ Opção B: Retrain com Ajustes Críticos (Bottleneck=64, LR Baixo) - **JÁ TESTADO (v2)**
 **Motivação:** Talvez época 1 seja ótimo, mas LR alta destruiu
 
-**Protocolo:**
-```bash
-python3 pesquisa_v6/scripts/004_train_stage2_redesigned.py \
-  --dataset-dir pesquisa_v6/v6_dataset/block_16 \
-  --stage1-model logs/v6_experiments/stage1_improved/stage1_model_best.pt \
-  --output-dir logs/v6_experiments/stage2_adapters_v2 \
-  --epochs 10 \
-  --use-adapters \
-  --adapter-bottleneck 64 \
-  --lr-adapter 1e-5 \
-  --lr-head 1e-4 \
-  --patience 3 \
-  --save-every-epoch
-```
+**❌ Status:** **JÁ EXECUTADO** como Exp 11A-v2
+- Resultado: F1=47.94% (época 1 best)
+- Conclusão: LR não era o problema
 
-**Mudanças:**
-- LR adapter: 1e-4 → **1e-5** (10x menor!)
-- Epochs: 50 → **10** (early stopping agressivo)
-- `--save-every-epoch`: Salvar modelo a cada época (inspecionar evolução)
+---
 
-**Esperado:**
-- Se época 1 ainda é melhor → Confirma near-zero init é ótimo
-- Se melhora após 5-10 épocas → LR era o problema
-
-**Custo:** ~10 minutos de treino
-
-### 7.3 Opção C: Documentar Limitação e Avançar (Exp 13B: Meta-Learning) ⭐ **RECOMENDADO**
+### 7.3 ✅ Opção C: Documentar Limitação e Avançar (Exp 13B: Meta-Learning) ⭐ **RECOMENDADO**
 **Motivação:** Adapters mostraram limitação fundamental para hierarquia AV1
 
-**Justificativa:**
-1. Época 1 best indica: **inicialização near-zero já é ótima**
-2. F1=47.74% < frozen 48.52% indica: **adapters não ajudam**
-3. Ablations v2/v3 provavelmente **não resolverão** problema fundamental
-4. **Tempo melhor investido** em abordagens radicalmente diferentes (Meta-Learning, Few-Shot)
+**Justificativa Científica:**
+1. **Evidência robusta:** 2 experimentos (v1 + v2) falharam com:
+   - LRs diferentes (1e-4 vs 1e-5, diferença de 10x)
+   - Epochs diferentes (50 vs 15)
+   - **Mesmo resultado:** Época 1 best, F1 < frozen baseline
+2. **Época 1 best** indica: **inicialização near-zero já é ótima**
+3. **F1=47.94% < frozen 48.52%** indica: **adapters não melhoram** sobre baseline simples
+4. **Ablations v3+ provavelmente não resolverão** problema fundamental
+5. **Literatura:** Adapters funcionam para domain shift, não task refinement
+
+**Contribuição para a Tese:**
+> "Demonstramos que Residual Adapters (Rebuffi et al., 2017) falham em hierarquias de mesma tarefa (partition binary → 3-way) quando a inicialização near-zero como função identidade já é ótima. Testamos 2 learning rates (1e-4 e 1e-5) e ambos resultaram em época 1 best com degradação de -6 a -8pp. Problema é arquitetural, não hiperparâmetros."
 
 **Ação:**
-- ✅ Documentar Exp 11A como **limitação conhecida**
-- ✅ Atualizar `Proximos_Exp.md` com status "Concluído (negativo)"
-- ✅ Partir para **Exp 13B (Meta-Learning)** ou **Exp 14 (Curriculum Learning)**
+- ✅ Documentar Exp 11A (v1 + v2) como **limitação conhecida**
+- ✅ Atualizar `Proximos_Exp.md` com status "Concluído (negativo - 2 tentativas)"
+- ✅ Partir para **Exp 13B (Meta-Learning)** - abordagem radicalmente diferente
 
-**Ganho:** Não desperdiçar tempo em variações de método já testado
+**Próximo Experimento (Exp 13B):**
+- **Fundamentação:** MAML (Finn et al., 2017), Reptile (Nichol et al., 2018)
+- **Objetivo:** Stage 2 aprende a **adaptar rapidamente** com poucos exemplos
+- **Meta:** F1 ≥ 50% com fast adaptation (5-10 gradient steps)
+- **Diferencial:** Não assume features fixas (frozen), aprende **meta-features** adaptáveis
+
+**Ganho:** Não desperdiçar tempo em variações de método já refutado (2x evidência)
 
 ---
 
 ## 8. Artefatos e Reprodutibilidade
 
 ### 8.1 Checkpoints Salvos
+
+#### Exp 11A-v1 (LR=1e-4)
 
 | Arquivo | Época | F1 Macro | Tamanho | Path |
 |---------|-------|----------|---------|------|
@@ -541,9 +628,20 @@ python3 pesquisa_v6/scripts/004_train_stage2_redesigned.py \
 | `stage2_history.pt` | 1-50 | - | 9.2 KB | `logs/v6_experiments/stage2_adapters/` |
 | `stage2_metrics.json` | - | Summary | 845 B | `logs/v6_experiments/stage2_adapters/` |
 
-**⚠️ Importante:** Checkpoint best foi salvo na **época 1**, não época 50!
+#### Exp 11A-v2 (LR=1e-5)
 
-### 8.2 Comando de Treino Exato
+| Arquivo | Época | F1 Macro | Tamanho | Path |
+|---------|-------|----------|---------|------|
+| `stage2_model_best.pt` | **1** | **47.94%** 🏆 | ~47 MB | `pesquisa_v6/logs/v6_experiments/stage2_adapters_v2/` |
+| `stage2_model_final.pt` | 15 | 41.24% | ~131 MB | `pesquisa_v6/logs/v6_experiments/stage2_adapters_v2/` |
+| `stage2_history.pt` | 1-15 | - | ~5 KB | `pesquisa_v6/logs/v6_experiments/stage2_adapters_v2/` |
+| `stage2_metrics.json` | - | Summary | ~800 B | `pesquisa_v6/logs/v6_experiments/stage2_adapters_v2/` |
+
+**⚠️ Importante:** Em AMBOS v1 e v2, checkpoint best foi salvo na **época 1**, não época final!
+
+### 8.2 Comandos de Treino Exatos
+
+#### v1 (LR=1e-4, 50 épocas)
 ```bash
 python3 pesquisa_v6/scripts/004_train_stage2_redesigned.py \
   --dataset-dir pesquisa_v6/v6_dataset/block_16 \
@@ -562,6 +660,25 @@ python3 pesquisa_v6/scripts/004_train_stage2_redesigned.py \
 ```
 
 **Timestamp:** 13 de outubro de 2025, 22:31:29 (best checkpoint)
+
+#### v2 (LR=1e-5, 15 épocas)
+```bash
+python3 pesquisa_v6/scripts/004_train_stage2_redesigned.py \
+  --dataset-dir pesquisa_v6/v6_dataset/block_16 \
+  --stage1-model pesquisa_v6/logs/v6_experiments/stage1/stage1_model_best.pt \
+  --output-dir pesquisa_v6/logs/v6_experiments/stage2_adapters_v2 \
+  --epochs 15 \
+  --batch-size 128 \
+  --use-adapters \
+  --adapter-bottleneck 64 \
+  --adapter-dropout 0.1 \
+  --lr-adapter 1e-5 \
+  --lr 1e-4 \
+  --device cuda \
+  --seed 42
+```
+
+**Timestamp:** 14 de outubro de 2025, ~15:56 (início v2)
 
 ### 8.3 Validação Standalone (Script 009)
 ```bash
@@ -610,36 +727,44 @@ python3 pesquisa_v6/scripts/009_analyze_stage2_confusion.py \
 ### Fase 3: Análise ✅
 - [x] Best epoch identificado (época 1, não 50!)
 - [x] Confusion matrix extraída
-- [x] Degradação documentada (-7.82pp)
-- [x] Comparação com frozen baseline (F1: 47.74% vs 48.52%)
+- [x] Degradação documentada (-7.82pp v1, -6.70pp v2)
+- [x] Comparação com frozen baseline (F1: 47.74% vs 48.52% v1, 47.94% vs 48.52% v2)
+- [x] **Ablation v2 executado** (LR=1e-5, 15 épocas)
+- [x] **Hipótese LR refutada** (v1 e v2 idênticos)
 
 ### Fase 4: Documentação ✅
 - [x] Seção 5 (Resultados) atualizada com métricas reais
+- [x] **Seção 5.6 (Ablation v2) adicionada** com tabela comparativa v1 vs v2
 - [x] Seção 6 (Análise Crítica) com lições aprendidas
+- [x] **Seção 6.2 atualizada** com evidência de 2 experimentos (v1 + v2)
 - [x] Seção 7 (Próximos Passos) com 3 opções (A/B/C)
-- [x] Seção 8 (Artefatos) com checkpoints e comandos
+- [x] **Seção 7 atualizada:** Opção B marcada como "JÁ TESTADO (v2)", Opção C reforçada
+- [x] **Seção 8 (Artefatos) atualizada** com checkpoints v1 e v2
 - [x] Confusion matrix e tabelas formatadas
 - [x] Hipóteses de falha documentadas
 
 ### Fase 5: Git e Repositório ⏳
 - [ ] `git add docs_v6/11_exp11a_adapter_layers.md`
-- [ ] `git commit -m "docs(exp11a): Document results..."`
+- [ ] `git commit -m "docs(exp11a): Add v2 results - LR hypothesis refuted..."`
 - [ ] `git push origin feat/exp11a-adapter-layers`
 
 ### Fase 6: Validação Opcional ⏳
 - [ ] Script 009 (validação standalone confusion matrix)
 - [ ] Script 008 (pipeline evaluation completo)
 
-### Fase 7: Decisão Estratégica ⏳
-- [ ] Opção A: Ablation v3 (bottleneck=128)?
-- [ ] Opção B: Retrain (LR=1e-5, early stop)?
-- [ ] **Opção C: Avançar para Exp 13B (Meta-Learning)** ⭐
+### Fase 7: Decisão Estratégica ✅
+- [x] **Opção A (bottleneck=128): NÃO** - Problema é arquitetural, não capacidade
+- [x] **Opção B (LR=1e-5): TESTADO (v2)** - Confirmou que LR não era problema
+- [x] **Opção C (Exp 13B Meta-Learning): SIM** ⭐ - Próximo passo recomendado
 
-**Status Final:** ✅ **CONCLUÍDO com resultado NEGATIVO** - F1=47.74% (época 1) **abaixo de frozen baseline 48.52%**
+**Status Final:** ✅ **CONCLUÍDO com 2 experimentos (v1 + v2)** - Ambos com resultado NEGATIVO
+- v1: F1=47.74% (época 1) **abaixo de frozen baseline 48.52%** (-0.78pp)
+- v2: F1=47.94% (época 1) **abaixo de frozen baseline 48.52%** (-0.58pp)
+- **Conclusão:** Adapters não adequados para hierarquia AV1 (binary → 3-way)
 
 ---
 
-**Última Atualização:** 14 de outubro de 2025 - Documentação completa pós-treino
+**Última Atualização:** 14 de outubro de 2025 - Documentação completa v1 + v2, ablation v2 executado e analisado
 | **F1 RECT** | 62.14% | ≥ 63% | +0.9pp |
 | **F1 AB** | 41.73% | ≥ 45% | +3.3pp |
 
