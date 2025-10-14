@@ -53,7 +53,7 @@ from tqdm import tqdm
 # Add v6 pipeline to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "v6_pipeline"))
 from data_hub import HierarchicalBlockDatasetV6, filter_for_stage2, get_class_weights
-from models import Stage2Model
+from models import Stage2Model, Stage2ModelWithAdapters
 from losses import ClassBalancedFocalLoss
 from augmentation import Stage2Augmentation
 from metrics import compute_metrics
@@ -201,6 +201,16 @@ def main():
                        help="Number of dataloader workers")
     parser.add_argument("--seed", type=int, default=42,
                        help="Random seed")
+    parser.add_argument("--use-adapters", action="store_true",
+                       help="Use Adapter Layers instead of fine-tuning (Rebuffi et al., 2017)")
+    parser.add_argument("--adapter-bottleneck", type=int, default=64,
+                       help="Bottleneck dimension for adapter modules")
+    parser.add_argument("--adapter-dropout", type=float, default=0.1,
+                       help="Dropout probability for adapter modules")
+    parser.add_argument("--lr-adapter", type=float, default=1e-4,
+                       help="Learning rate for adapter modules (when --use-adapters)")
+    parser.add_argument("--save-epoch-0", action="store_true",
+                       help="Save checkpoint after epoch 1 (frozen backbone/adapters)")
     
     args = parser.parse_args()
     
@@ -293,20 +303,52 @@ def main():
     
     # Create model
     print(f"\n[3/6] Creating model...")
-    model = Stage2Model(pretrained=True).to(device)
     
-    # ⚠️  NOT loading Stage 1 backbone due to Negative Transfer
-    # Reason: Stage 1 (binary: NONE vs PARTITION) features are incompatible 
-    #         with Stage 2 (3-way: SPLIT vs RECT vs AB) task
-    # References:
-    #   - Yosinski et al., 2014: "How transferable are features in deep neural networks?"
-    #   - Kornblith et al., 2019: "Do Better ImageNet Models Transfer Better?"
-    # Solution: Use only ImageNet pretrained ResNet-18 (already loaded via pretrained=True)
-    print(f"  📚 Using ImageNet-only pretrained ResNet-18")
-    print(f"  🔬 Strategy: Train from scratch to avoid negative transfer")
-    print(f"  📄 See: PLANO_v6_val2.md (Opção 1)")
-    
-    print(f"  Parameters: {sum(p.numel() for p in model.parameters()):,}")
+    if args.use_adapters:
+        # Exp 11A: Use Adapter Layers (Rebuffi et al., 2017)
+        print(f"  🔧 Using Adapter Layers Architecture (Exp 11A)")
+        print(f"  📄 Fundamentação: Rebuffi et al. (2017), Houlsby et al. (2019)")
+        print(f"  🎯 Strategy: Freeze backbone, train only adapters + head")
+        
+        model = Stage2ModelWithAdapters(
+            pretrained=True,
+            bottleneck_dim=args.adapter_bottleneck,
+            adapter_dropout=args.adapter_dropout,
+            load_stage1_backbone=args.stage1_model
+        ).to(device)
+        
+        print(f"  ✅ Adapter model created successfully")
+        
+    else:
+        # Original approach: frozen or fine-tuned backbone
+        model = Stage2Model(pretrained=True).to(device)
+        
+        # Load Stage 1 backbone if provided
+        if args.stage1_model and Path(args.stage1_model).exists():
+            print(f"  📥 Loading Stage 1 backbone from: {args.stage1_model}")
+            stage1_checkpoint = torch.load(args.stage1_model, map_location=device, weights_only=False)
+            
+            if isinstance(stage1_checkpoint, dict) and 'model_state_dict' in stage1_checkpoint:
+                stage1_state = stage1_checkpoint['model_state_dict']
+            else:
+                stage1_state = stage1_checkpoint
+            
+            # Filter backbone parameters
+            backbone_state_dict = {
+                k.replace('backbone.', ''): v 
+                for k, v in stage1_state.items() 
+                if k.startswith('backbone.')
+            }
+            
+            model.backbone.load_state_dict(backbone_state_dict, strict=False)
+            print(f"  ✅ Loaded {len(backbone_state_dict)} backbone layers from Stage 1")
+            print(f"  🔬 Strategy: Transfer learning from Stage 1 (F1=72.28%)")
+        else:
+            print(f"  📚 Using ImageNet-only pretrained ResNet-18")
+            print(f"  🔬 Strategy: Train from scratch to avoid negative transfer")
+            print(f"  📄 See: PLANO_v6_val2.md (Opção 1)")
+        
+        print(f"  Parameters: {sum(p.numel() for p in model.parameters()):,}")
     
     # Create loss
     print(f"\n[4/6] Creating loss function...")
@@ -321,11 +363,30 @@ def main():
     print(f"  Note: Label Smoothing DISABLED (conflicts with Focal Loss - Müller et al., 2019)")
     
     # Create optimizer
-    optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=args.lr,
-        weight_decay=args.weight_decay
-    )
+    print(f"\n[5/6] Creating optimizer...")
+    
+    if args.use_adapters:
+        # Adapter-specific optimizer: train only adapters + head
+        trainable_params = [
+            {'params': [p for n, p in model.named_parameters() 
+                       if 'adapter' in n], 'lr': args.lr_adapter, 'name': 'adapters'},
+            {'params': model.head.parameters(), 'lr': args.lr, 'name': 'head'}
+        ]
+        optimizer = torch.optim.AdamW(trainable_params, weight_decay=args.weight_decay)
+        
+        print(f"  Adapter LR: {args.lr_adapter:.2e}")
+        print(f"  Head LR: {args.lr:.2e}")
+        print(f"  ✅ Optimizer configured for adapter training")
+        
+    else:
+        # Standard optimizer: all parameters
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=args.lr,
+            weight_decay=args.weight_decay
+        )
+        print(f"  Head LR: {args.lr:.2e}")
+        print(f"  ✅ Optimizer configured for standard training")
     
     # Cosine Annealing scheduler (Loshchilov & Hutter, 2017)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -335,7 +396,7 @@ def main():
     )
     
     # Training loop
-    print(f"\n[5/6] Training...")
+    print(f"\n[6/6] Training...")
     best_macro_f1 = 0.0
     history = {
         'train_loss': [], 'train_acc': [],

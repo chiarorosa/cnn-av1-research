@@ -251,11 +251,193 @@ class Stage3ABModel(nn.Module):
         return self.head(features)
 
 
+# =============================================================================
+# Adapter Layers (Rebuffi et al., 2017; Houlsby et al., 2019)
+# =============================================================================
+
+class AdapterModule(nn.Module):
+    """
+    Residual Adapter Layer for parameter-efficient transfer learning
+    
+    Architecture: in_dim → bottleneck → in_dim + residual connection
+    Preserves original features while learning task-specific adaptations
+    
+    References:
+    - Rebuffi et al. (2017) - "Learning multiple visual domains with residual adapters"
+    - Houlsby et al. (2019) - "Parameter-Efficient Transfer Learning for NLP"
+    
+    Args:
+        in_dim: Input feature dimension (channel count)
+        bottleneck_dim: Bottleneck dimension (compression factor)
+        dropout: Dropout probability for regularization
+    """
+    def __init__(self, in_dim: int, bottleneck_dim: int = 64, dropout: float = 0.1):
+        super().__init__()
+        
+        # Down-projection (compression)
+        self.down_proj = nn.Linear(in_dim, bottleneck_dim)
+        self.activation = nn.ReLU()
+        self.dropout = nn.Dropout(dropout)
+        
+        # Up-projection (expansion back to original dim)
+        self.up_proj = nn.Linear(bottleneck_dim, in_dim)
+        
+        # Near-zero initialization (Houlsby et al., 2019)
+        # Ensures adapters start close to identity function
+        nn.init.normal_(self.down_proj.weight, std=1e-3)
+        nn.init.normal_(self.up_proj.weight, std=1e-3)
+        nn.init.zeros_(self.down_proj.bias)
+        nn.init.zeros_(self.up_proj.bias)
+    
+    def forward(self, x):
+        """
+        Args:
+            x: [B, C, H, W] feature map from ResNet block
+        
+        Returns:
+            adapted: [B, C, H, W] adapted features with residual connection
+        """
+        # Global average pooling to get channel-wise statistics
+        B, C, H, W = x.shape
+        pooled = x.mean(dim=[2, 3])  # [B, C]
+        
+        # Adapter transformation (bottleneck)
+        adapter_output = self.down_proj(pooled)      # [B, bottleneck_dim]
+        adapter_output = self.activation(adapter_output)
+        adapter_output = self.dropout(adapter_output)
+        adapter_output = self.up_proj(adapter_output) # [B, C]
+        
+        # Residual connection: x + adapter(x)
+        # Broadcast adapter output to match spatial dimensions
+        adapter_output = adapter_output.view(B, C, 1, 1)
+        return x + adapter_output
+
+
+class Stage2ModelWithAdapters(nn.Module):
+    """
+    Stage 2 model with Adapter Layers for parameter-efficient transfer learning
+    
+    Freezes backbone (Stage 1 features) and only trains:
+    1. Adapter modules (inserted after each ResNet layer)
+    2. Classification head
+    
+    This avoids catastrophic forgetting while allowing task-specific adaptation.
+    
+    Args:
+        pretrained: Whether to use ImageNet-pretrained ResNet-18
+        bottleneck_dim: Bottleneck dimension for adapter modules
+        adapter_dropout: Dropout probability for adapters
+        load_stage1_backbone: Optional path to Stage 1 checkpoint
+    """
+    def __init__(
+        self, 
+        pretrained: bool = True, 
+        bottleneck_dim: int = 64,
+        adapter_dropout: float = 0.1,
+        load_stage1_backbone: str = None
+    ):
+        super().__init__()
+        
+        # Backbone ResNet-18 with attention (Stage 1 features)
+        self.backbone = ImprovedBackbone(pretrained=pretrained)
+        
+        # Load Stage 1 weights if provided (critical for performance)
+        if load_stage1_backbone:
+            print(f"  📥 Loading Stage 1 backbone from: {load_stage1_backbone}")
+            stage1_checkpoint = torch.load(load_stage1_backbone, map_location='cpu', weights_only=False)
+            
+            # Extract backbone state_dict
+            if isinstance(stage1_checkpoint, dict) and 'model_state_dict' in stage1_checkpoint:
+                stage1_state = stage1_checkpoint['model_state_dict']
+            else:
+                stage1_state = stage1_checkpoint
+            
+            # Filter backbone parameters
+            backbone_state_dict = {
+                k.replace('backbone.', ''): v 
+                for k, v in stage1_state.items() 
+                if k.startswith('backbone.')
+            }
+            
+            self.backbone.load_state_dict(backbone_state_dict, strict=False)
+            print(f"  ✅ Loaded {len(backbone_state_dict)} backbone layers from Stage 1")
+        
+        # FREEZE backbone (preserves Stage 1 features)
+        for param in self.backbone.parameters():
+            param.requires_grad = False
+        
+        # Adapter modules (trainable) - inserted after each ResNet layer
+        self.adapter_layer1 = AdapterModule(64, bottleneck_dim, adapter_dropout)
+        self.adapter_layer2 = AdapterModule(128, bottleneck_dim, adapter_dropout)
+        self.adapter_layer3 = AdapterModule(256, bottleneck_dim, adapter_dropout)
+        self.adapter_layer4 = AdapterModule(512, bottleneck_dim, adapter_dropout)
+        
+        # Classification head (trainable)
+        self.head = Stage2ThreeWayHead()
+        
+        # Count parameters
+        total_params = sum(p.numel() for p in self.parameters())
+        trainable_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
+        frozen_params = total_params - trainable_params
+        
+        print(f"  🔧 Adapter Configuration:")
+        print(f"     Bottleneck dim: {bottleneck_dim}")
+        print(f"     Total params: {total_params:,}")
+        print(f"     Trainable params: {trainable_params:,} ({trainable_params/total_params*100:.2f}%)")
+        print(f"     Frozen params: {frozen_params:,}")
+    
+    def forward(self, x):
+        """
+        Forward pass with adapters inserted after each ResNet layer
+        
+        Args:
+            x: [B, 1, H, W] input image (grayscale)
+        
+        Returns:
+            logits: [B, 3] classification logits (SPLIT, RECT, AB)
+        """
+        # Initial conv + pooling (frozen)
+        x = self.backbone.conv1(x)
+        x = self.backbone.bn1(x)
+        x = self.backbone.relu(x)
+        x = self.backbone.maxpool(x)
+        
+        # Layer 1 (64 channels) + SE-Block + Adapter
+        x = self.backbone.layer1(x)
+        x = self.backbone.se1(x)
+        x = self.adapter_layer1(x)  # ← Adapter inserted here
+        
+        # Layer 2 (128 channels) + SE-Block + Adapter
+        x = self.backbone.layer2(x)
+        x = self.backbone.se2(x)
+        x = self.adapter_layer2(x)  # ← Adapter inserted here
+        
+        # Layer 3 (256 channels) + SE-Block + Adapter
+        x = self.backbone.layer3(x)
+        x = self.backbone.se3(x)
+        x = self.adapter_layer3(x)  # ← Adapter inserted here
+        
+        # Layer 4 (512 channels) + SE-Block + Spatial Attention + Adapter
+        x = self.backbone.layer4(x)
+        x = self.backbone.se4(x)
+        x = self.backbone.spatial_attn(x)
+        x = self.adapter_layer4(x)  # ← Adapter inserted here
+        
+        # Global pooling (no dropout here, it's in the head)
+        x = self.backbone.avgpool(x)
+        x = torch.flatten(x, 1)  # [B, 512]
+        
+        # Classification head (includes dropout internally)
+        x = self.head(x)  # [B, 3]
+        
+        return x
+
+
 if __name__ == "__main__":
     # Test models
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     batch_size = 4
-    x = torch.randn(batch_size, 3, 16, 16).to(device)
+    x = torch.randn(batch_size, 1, 16, 16).to(device)  # Changed to 1 channel (grayscale)
     
     print("Testing Stage 1 Model...")
     model1 = Stage1Model().to(device)
@@ -268,6 +450,12 @@ if __name__ == "__main__":
     model2 = Stage2Model().to(device)
     out2 = model2(x)
     print(f"Output shape: {out2.shape}")
+    print(f"Expected: ({batch_size}, 3)\n")
+    
+    print("Testing Stage 2 Model with Adapters...")
+    model2_adapters = Stage2ModelWithAdapters(pretrained=False, bottleneck_dim=64).to(device)
+    out2_adapters = model2_adapters(x)
+    print(f"Output shape: {out2_adapters.shape}")
     print(f"Expected: ({batch_size}, 3)\n")
     
     print("Testing Stage 3-RECT Model...")
@@ -283,3 +471,4 @@ if __name__ == "__main__":
     print(f"Expected: ({batch_size}, 4)\n")
     
     print("✅ All models working correctly!")
+
