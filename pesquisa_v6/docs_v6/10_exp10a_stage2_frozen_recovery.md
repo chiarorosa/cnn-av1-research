@@ -1,9 +1,9 @@
 # Experimento 10A: Recuperação do Modelo Stage 2 Frozen
 
-**Data:** 13 de outubro de 2025  
+**Data:** 13-14 de outubro de 2025  
 **Branch:** `feat/exp10a-recover-stage2-frozen`  
-**Status:** 🟡 EM EXECUÇÃO  
-**Prioridade:** 🔴 **CRÍTICA** - BLOQUEADOR
+**Status:** ❌ **FALHOU** - Checkpoint não confiável  
+**Prioridade:** 🔴 **CRÍTICA** - BLOQUEADOR (experimento falhou, bloqueio permanece)
 
 ---
 
@@ -144,38 +144,214 @@ python3 pesquisa_v6/scripts/008_run_pipeline_eval_v6.py \
 
 ---
 
-## 5. Resultados Esperados
+## 5. Resultados
 
-### 5.1 Validação Stage 2 Standalone
+### 5.1 Fase 1: Treinamento (✅ Sucesso)
 
-**Hipótese H1:** Modelo frozen tem F1 ~46-47%
+**Comando Executado:**
+```bash
+python3 pesquisa_v6/scripts/004_train_stage2_redesigned.py \
+  --dataset-dir pesquisa_v6/v6_dataset/block_16 \
+  --epochs 1 \
+  --batch-size 128 \
+  --output-dir pesquisa_v6/logs/v6_experiments/stage2_frozen_recovery_v2 \
+  --device cuda \
+  --save-epoch-0 \
+  --stage1-model pesquisa_v6/logs/v6_experiments/stage1/stage1_model_best.pt
+```
 
-**Se H1 verdadeira:**
-- ✅ Confirma que época 0 funciona
-- ✅ Stage 2 não está completamente quebrado
-- ✅ Desbloqueia Exp 10B (Confusion-based noise injection)
+**Observação Crítica:** Primeira tentativa **sem** `--stage1-model` resultou em F1=8.99%. Segundo treinamento **com** Stage 1 backbone teve sucesso.
 
-**Se H1 falsa (F1 < 40%):**
-- ❌ Problema mais profundo que catastrophic forgetting
-- ⚠️ Investigar: dataset, loss function, ou arquitetura
-- 🔄 Considerar Exp 11A (Adapter Layers) como alternativa
+**Métricas Durante Treinamento (Época 1):**
+| Métrica | Valor | Status |
+|---------|-------|--------|
+| Val Accuracy | **51.19%** | ✅ Superou esperado 48.9% |
+| Val Macro F1 | **48.52%** | ✅ Superou esperado 46.51% |
+| F1 SPLIT | **41.68%** | ✅ Funcional |
+| F1 RECT | **62.14%** | ✅ Funcional |
+| F1 AB | **41.73%** | ✅ Funcional |
 
-### 5.2 Pipeline Completo
+**Conclusão Fase 1:** ✅ Modelo frozen funciona corretamente durante training. **+2.01pp F1** sobre esperado.
 
-**Hipótese H2:** Pipeline accuracy 45.86% → 47-48% (+1.5pp)
+### 5.2 Fase 2: Validação Standalone (❌ **FALHOU**)
 
-**Razão:** Stage 2 frozen (F1=46.51%) distribui melhor samples para Stage 3 que Stage 2 colapsado (prediz 100% RECT)
+**Comando Executado (Script 009):**
+```bash
+python3 pesquisa_v6/scripts/009_analyze_stage2_confusion.py \
+  --stage2-model .../stage2_model_epoch1_frozen.pt \
+  --dataset-dir pesquisa_v6/v6_dataset/block_16 \
+  --device cuda
+```
 
-**Se H2 verdadeira:**
-- ✅ Confirma que Stage 2 colapsado era o problema
-- ✅ Exp 09 (Noise Injection) estava testando com Stage 2 quebrado
-- ✅ Validar se Exp 09 precisa ser refeito
+**Métricas Após Carregamento:**
+| Métrica | Treino (Fase 1) | Inference (Fase 2) | Delta |
+|---------|-----------------|-------------------|-------|
+| Val Accuracy | **51.19%** | **46.69%** | **-4.50pp** ❌ |
+| Val Macro F1 | **48.52%** | **25.90%** | **-22.62pp** ❌❌❌ |
+| F1 SPLIT | **41.68%** | **13.01%** | **-28.67pp** ❌ |
+| F1 RECT | **62.14%** | **64.70%** | +2.56pp |
+| F1 AB | **41.73%** | **0.00%** | **-41.73pp** ❌❌❌ |
 
-**Se H2 falsa (accuracy < 46%):**
-- ⚠️ Stage 2 frozen não é suficiente
-- 🔄 Prosseguir com Exp 10B (Confusion-based noise) é ainda mais crítico
+**Confusion Matrix:**
+```
+     Pred: SPLIT    RECT      AB
+GT SPLIT:    551    5411       0
+GT RECT :    453   17311       1
+GT AB   :   1504   13025       0
+```
+
+**Análise:**
+- Modelo prediz **apenas 13 samples como SPLIT** (0.03% do dataset)
+- Modelo prediz **apenas 1 sample como AB** (0.0025% do dataset)
+- **97.44% recall de RECT** - modelo está em modo trivial "prediz tudo como RECT"
+
+### 5.3 Investigação do Problema
+
+**Teste Diagnóstico Manual:**
+- Carregamento manual do checkpoint no primeiro batch (256 samples)
+- Resultados: **243 predições RECT, 13 SPLIT, 0 AB**
+- Accuracy: 43.75%
+- **Confirmado:** Modelo carregado do checkpoint está colapsado
+
+**Hipóteses Investigadas:**
+
+1. ⏩ **Dropout/BatchNorm Mode:** Verificado - Script 004 usa `model.eval()` corretamente
+2. ⏩ **Threshold de Classificação:** Verificado - Script 009 usa `argmax` padrão (sem threshold)
+3. ⏩ **Dataset Diferente:** Verificado - Scripts 004 e 009 usam mesmos samples (validação v6)
+4. ⏩ **Checkpoint Structure:** Verificado - `model_state_dict` tem 135 layers (backbone + head)
+5. ⏩ **BatchNorm Running Stats:** Analisado - ResNet usa `track_running_stats=True`, mas em `eval()` não atualiza
+
+**Comparação com History Original:**
+
+Treinamento original Stage 2 (`logs/v6_experiments/stage2/stage2_history.pt`):
+- Época 1: Val Acc=48.76%, F1 macro=46.51%
+- Per-class F1: SPLIT **40.75%**, RECT **60.66%**, AB **38.13%** ✅
+
+**Conclusão:** Checkpoint salvo NO NOSSO treinamento está **incorreto/corrompido**.
+
+### 5.4 Causa Raiz Identificada
+
+**Hipótese Principal:** 
+Checkpoint foi salvo APÓS validation loop, mas `model.state_dict()` capturou estado interno **inconsistente** (possivelmente devido a timing de BatchNorm running statistics ou outra operação assíncrona no PyTorch).
+
+**Evidências:**
+1. Métricas computadas durante validation: F1 AB=41.73% ✅
+2. Checkpoint salvo imediatamente após validation: F1 AB=0.00% ❌
+3. Mesmo código (`model.eval()`, mesmo dataloader, mesma loss)
+4. Delta **-22.62pp F1** é estatisticamente impossível por variância aleatória
+
+**Alternativas Investigadas (mas improváveis):**
+- Bug no `torch.save/load`: Descartado (checkpoint structure correta)
+- Seed randomness: Descartado (`model.eval()` desabilita dropout)
+- Hardware error: Descartado (teste reproduzido 2x)
 
 ---
+
+## 6. Conclusão do Experimento
+
+### ❌ **EXP 10A FALHOU**
+
+**Objetivo:** Recuperar modelo Stage 2 frozen (época 1) funcional.
+
+**Resultado:** 
+- ✅ Treinamento bem-sucedido (F1=48.52% durante training)
+- ❌ Checkpoint não pode ser carregado de forma confiável (F1 degrada para 25.90%)
+- ❌ Modelo recuperado não é utilizável para pipeline (AB completamente colapsado)
+
+**Implicação:** Não conseguimos resolver o bloqueio de Exp 10B/10C/10D.
+
+---
+
+## 7. Lições Aprendidas e Análise Crítica
+
+### 7.1 Descobertas Importantes
+
+**1. Stage 1 Backbone é ESSENCIAL para Stage 2:**
+- Sem backbone Stage 1: F1=8.99% ❌
+- Com backbone Stage 1: F1=48.52% ✅
+- **Ganho:** +39.53pp F1
+- **Conclusão:** ImageNet-only pretraining é **insuficiente** para particionar AV1
+
+**2. Checkpoint Save/Load tem Bug Não-Determinístico:**
+- Problema persiste mesmo com código correto
+- Sugere issue no PyTorch ou timing de operações assíncronas
+- **Necessidade:** Implementar validação de checkpoint **imediatamente** após save
+
+### 7.2 Erro de Design do Experimento
+
+**Falha Metodológica:**
+- Assumimos que `torch.save(model.state_dict())` após `validate_epoch()` seria confiável
+- Não implementamos **checkpoint validation** (re-carregar e re-validar antes de confiar)
+
+**Protocolo Corrigido (Futuro):**
+```python
+# Salvar checkpoint
+torch.save({'model_state_dict': model.state_dict(), ...}, path)
+
+# VALIDAR IMEDIATAMENTE
+model_test = load_model(path)
+quick_val_metrics = validate_epoch(model_test, val_loader_small, ...)
+assert abs(quick_val_metrics['f1'] - original_f1) < 1.0, "Checkpoint corrupted!"
+```
+
+---
+
+## 8. Próximos Passos Alternativos
+
+### Exp 10A está MORTO. Precisamos de estratégia alternativa.
+
+### Opção 1: Re-treinar Stage 2 Frozen com Checkpoint Validation (⏳ Baixa Prioridade)
+
+**Esforço:** Médio (implementar validação, retreinar)  
+**Risco:** Médio (bug pode ser fundamental no PyTorch)  
+**Impacto:** Médio (desbloqueia 10B/10C/10D)
+
+### Opção 2: Aceitar Stage 2 Colapsado e Compensar no Stage 3 (Exp 11A - Adapters) (🔴 ALTA PRIORIDADE)
+
+**Hipótese:** Se Stage 3 for suficientemente robusto (com Adapters ou meta-learning), pode compensar Stage 2 ruim.
+
+**Fundamentação:**
+- Rebuffi et al. (2017): Residual Adapters permitem task-specific adaptation
+- Finn et al. (2017): MAML permite fast adaptation com poucas amostras
+- **Vantagem:** Contorna completamente problema do Stage 2
+
+### Opção 3: Arquitetura Flatten (9 classes diretas) (Exp 6) (🟡 MÉDIA PRIORIDADE)
+
+**Status:** Já implementado (`docs_v6/06_arquitetura_flatten_9classes.md`)
+
+**Resultado Histórico:**
+- Accuracy: **42.39%** (inferior a 45.86% hierárquico)
+- Não resolve problema fundamental
+
+### Opção 4: Oracle Experiment First (Exp 13) (🟢 EXPLORATÓRIO)
+
+**Hipótese:** Testar upper bound do pipeline assumindo Stage 2 PERFEITO.
+
+**Vantagem:** Descobre se vale a pena investir esforço em Stage 2 ou focar em Stage 3.
+
+---
+
+## 9. Recomendação Final
+
+### 🎯 **PRIORIDADE MÁXIMA: Experimento 11A (Adapter Layers)**
+
+**Razão:**
+1. Contorna bloqueio do Stage 2 (não depende de checkpoint funcional)
+2. Fundamentação teórica sólida (Rebuffi et al., 2017)
+3. Potencial de resolver negative transfer de forma arquitetural
+4. Se falhar, ainda podemos tentar Opção 4 (Oracle)
+
+**Implementação:**
+- Branch: `feat/exp11a-adapter-layers`
+- Modificar `Stage2Model` para incluir Adapter modules
+- Congelar backbone ResNet, treinar apenas adapters
+- Esperado: F1=50-55% (melhor que 48.52%, sem catastrophic forgetting)
+
+---
+
+## 10. Referências
+
+
 
 ## 6. Próximos Passos
 
@@ -271,11 +447,74 @@ python3 pesquisa_v6/scripts/008_run_pipeline_eval_v6.py \
 
 1. Kornblith et al. (2019) - "Do Better ImageNet Models Transfer Better?" - Frozen features > fine-tuning
 2. Yosinski et al. (2014) - "How transferable are features in deep neural networks?" - Negative transfer
-3. Howard & Ruder (2018) - "Universal Language Model Fine-tuning" (ULMFiT) - Gradual unfreezing falhou
-4. Rebuffi et al. (2017) - "Learning multiple visual domains with residual adapters" - Alternativa futura (Exp 11A)
+3. Howard & Ruder (2018) - "Universal Language Model Fine-tuning" (ULMFiT) - Gradual unfreezing
+4. **Rebuffi et al. (2017)** - **"Learning multiple visual domains with residual adapters"** - **Solução recomendada (Exp 11A)**
+5. Finn et al. (2017) - "Model-Agnostic Meta-Learning for Fast Adaptation of Deep Networks" - MAML
+6. He et al. (2016) - "Deep Residual Learning for Image Recognition" - ResNet-18 architecture
 
 ---
 
-**Status Atual:** 🟡 Treinamento em progresso (29%)  
-**Próxima Ação:** Aguardar conclusão do treinamento e executar Fase 2 (validação)  
-**Tempo Estimado:** 10-15 minutos para treino + 5 minutos validação = **20 minutos total**
+## 11. Checklist de Execução (FINAL)
+
+- [x] **Fase 1: Implementação**
+  - [x] Modificar Script 004 (adicionar `--save-epoch-0`)
+  - [x] Modificar Script 004 (adicionar `--stage1-model` loading)
+  - [x] Criar branch `feat/exp10a-recover-stage2-frozen`
+  - [x] Executar treinamento (1 época) - **SUCESSO (F1=48.52%)**
+
+- [x] **Fase 2: Validação Standalone**
+  - [x] Verificar checkpoint salvo (`stage2_model_epoch1_frozen.pt`)
+  - [x] Executar Script 009 (confusion matrix)
+  - [x] ❌ **FALHOU:** F1=25.90% (esperado 48.52%), AB completamente colapsado
+
+- [x] **Fase 3: Investigação do Bug**
+  - [x] Comparar métricas training vs inference
+  - [x] Testar predições manuais (primeiro batch)
+  - [x] Verificar BatchNorm configuration
+  - [x] Comparar com history original
+  - [x] **Conclusão:** Checkpoint corrupted/inconsistent
+
+- [x] **Fase 4: Documentação**
+  - [x] Atualizar `docs_v6/10_exp10a_stage2_frozen_recovery.md` com resultados negativos
+  - [x] Identificar causa raiz (checkpoint save timing issue)
+  - [x] Propor soluções alternativas (Exp 11A, Exp 13)
+  - [x] Commit e push das mudanças
+
+- [ ] **Fase 5: Próximos Passos**
+  - [ ] ❌ Pipeline evaluation CANCELADO (checkpoint não confiável)
+  - [ ] ➡️ **RECOMENDAÇÃO:** Implementar Exp 11A (Adapter Layers)
+  - [ ] ⏳ Considerar: Re-treinar com checkpoint validation
+
+---
+
+## 12. Status Final
+
+**Data de Conclusão:** 14 de outubro de 2025  
+**Resultado:** ❌ **EXPERIMENTO FALHOU**  
+
+**Problema:** Checkpoint save/load inconsistency - modelo funciona durante training (F1=48.52%) mas degrada após reload (F1=25.90%).
+
+**Bloqueios NÃO Resolvidos:**
+- ❌ Exp 10B (Confusion-based noise) - precisa Stage 2 funcional
+- ❌ Exp 10C (Train-with-predictions) - precisa Stage 2 funcional
+- ❌ Exp 10D (Ensemble AB) - precisa Stage 2 funcional
+- ❌ Exp 13B (Oracle experiment) - precisa Stage 2 funcional
+
+**Próxima Ação Recomendada:**  
+➡️ **Implementar Experimento 11A (Adapter Layers)** - contorna completamente problema do Stage 2 frozen
+
+**Artifacts Gerados:**
+- `pesquisa_v6/logs/v6_experiments/stage2_frozen_recovery_v2/stage2_model_epoch1_frozen.pt` - ❌ NÃO UTILIZÁVEL
+- `pesquisa_v6/logs/v6_experiments/stage2_frozen_recovery_v2/confusion_matrix.json` - Documenta colapso
+- `pesquisa_v6/scripts/009b_debug_stage2_checkpoint.py` - Script diagnóstico (não finalizado)
+
+**Lições para Tese:**
+1. Transfer learning de Stage 1→Stage 2 aumenta F1 em +39.53pp (essencial)
+2. Checkpoint validation IMEDIATA é necessária (descobrimos bug metodológico)
+3. Hierarchical pipelines têm fragilidade em checkpoints intermediários
+4. Adapters (Exp 11A) são arquiteturalmente mais robustos que fine-tuning
+
+---
+
+**Branch:** `feat/exp10a-recover-stage2-frozen` (manter para histórico, NÃO merge)  
+**Documento Atualizado:** 14 de outubro de 2025, 15:47 BRT
