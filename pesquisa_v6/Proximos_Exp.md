@@ -21,7 +21,12 @@ Este documento apresenta os experimentos com **maior potencial de melhoria** par
 
 ## 🔴 **PRIORIDADE CRÍTICA** - Resolver Stage 2 Colapsado
 
-### **Exp 10A: Recuperar/Validar Modelo Stage 2 Frozen (Época 0)**
+### **Exp 10A: Recuperar/Validar Modelo Stage 2 Frozen (Época 0)** ❌ **FALHOU**
+
+**Status:** ❌ **EXPERIMENTO CONCLUÍDO - RESULTADO NEGATIVO**  
+**Branch:** `feat/exp10a-recover-stage2-frozen`  
+**Data:** 13-14 de outubro de 2025  
+**Documentação:** `docs_v6/10_exp10a_stage2_frozen_recovery.md`
 
 **Problema Identificado:**
 - Checkpoint `stage2_model_best.pt` está colapsado (prediz RECT em 100% das amostras)
@@ -29,53 +34,39 @@ Este documento apresenta os experimentos com **maior potencial de melhoria** par
 - Análise do history mostra época 0 (frozen) tinha F1=46.51% ✅
 - Época 8 (após unfreeze) colapsou para F1=34.39% ❌
 
-**Hipótese:**
-> "O modelo frozen (época 0) funciona corretamente (F1=46.51%). Catastrophic forgetting ao unfreeze destruiu features. Solução: usar modelo frozen."
+**Hipótese (TESTADA):**
+> "O modelo frozen (época 1) funciona corretamente (F1=46.51%). Catastrophic forgetting ao unfreeze destruiu features. Solução: usar modelo frozen."
 
-**Protocolo:**
+**Resultado:**
+- ✅ **Fase 1 (Treinamento):** Sucesso - F1=48.52% durante training (+2.01pp sobre esperado)
+- ✅ **Descoberta:** Stage 1 backbone é ESSENCIAL (+39.53pp F1 gain vs ImageNet-only)
+- ❌ **Fase 2 (Validação):** FALHOU - Checkpoint reload F1=25.90% (AB completamente colapsado: 0 predições)
+- ❌ **Delta inexplicável:** -22.62pp F1 entre training e reload
 
-1. **Verificar existência de checkpoint frozen:**
-   ```bash
-   ls -lh pesquisa_v6/logs/v6_experiments/stage2/ | grep -E "ep[0-9]|frozen"
-   ```
+**Causa Raiz:**
+- Checkpoint save/load inconsistency (bug não-determinístico)
+- `model.state_dict()` captura estado inconsistente após validation loop
+- Possível issue no PyTorch ou timing de operações assíncronas
 
-2. **Se não existir, retreinar 1 época frozen:**
-   ```bash
-   python3 pesquisa_v6/scripts/004_train_stage2_redesigned.py \
-     --dataset-dir pesquisa_v6/v6_dataset/block_16 \
-     --epochs 1 \
-     --batch-size 128 \
-     --output-dir pesquisa_v6/logs/v6_experiments/stage2_frozen \
-     --device cuda \
-     --save-every-epoch
-   ```
+**Lições Aprendidas:**
+1. Transfer learning Stage 1→Stage 2 aumenta F1 em +39.53pp (ImageNet-only insuficiente)
+2. Checkpoint validation IMEDIATA é necessária (metodologia corrigida)
+3. Hierarchical pipelines têm fragilidade em checkpoints intermediários
 
-3. **Validar modelo frozen com Script 009:**
-   ```bash
-   python3 pesquisa_v6/scripts/009_analyze_stage2_confusion.py \
-     --stage2-model <path_to_frozen_model> \
-     --dataset-dir pesquisa_v6/v6_dataset/block_16 \
-     --device cuda
-   ```
-   **Esperado:** F1 ~0.46-0.47, accuracy ~48-49%
+**Bloqueios NÃO Resolvidos:**
+- ❌ Exp 10B (Confusion-based noise) - ainda precisa Stage 2 funcional
+- ❌ Exp 10C (Train-with-predictions) - ainda precisa Stage 2 funcional
+- ❌ Exp 10D (Ensemble AB) - ainda precisa Stage 2 funcional
+- ❌ Exp 13B (Oracle experiment) - ainda precisa Stage 2 funcional
 
-4. **Re-avaliar Pipeline Experimento 09:**
-   ```bash
-   python3 pesquisa_v6/scripts/008_run_pipeline_eval_v6.py \
-     --stage1-model pesquisa_v6/logs/v6_experiments/stage1/stage1_model_best.pt \
-     --stage2-model <frozen_model> \
-     --stage3-rect-model <robust_rect_model> \
-     --stage3-ab-models <ab_ensemble> \
-     --output-dir pesquisa_v6/logs/v6_experiments/pipeline_eval_frozen_s2
-   ```
+**Potencial de Ganho:** N/A (experimento falhou)  
+**Esforço:** Completado (2 horas de implementação + investigação)  
+**Risco:** Confirmado - bug metodológico descoberto  
 
-**Potencial de Ganho:** +0 a +2pp (desbloqueia demais experimentos)  
-**Esforço:** Baixo (1 hora)  
-**Risco:** Baixo  
-**Fundamentação:** Kornblith et al. (2019) - Features congeladas podem superar fine-tuning em tasks dissimilares  
-**Status:** **🚨 BLOQUEADOR** - Todos experimentos Stage 3 dependem disso
-
-**Documentação:** Atualizar `docs_v6/10_stage2_collapse_resolution.md`
+**Próximos Passos Recomendados:**
+1. 🔴 **Prioridade Máxima:** Implementar **Exp 11A (Adapter Layers)** - contorna bloqueio do Stage 2
+2. 🟡 Alternativa: **Exp 13A (Oracle Experiment)** - testar upper bound assumindo Stage 2 perfeito
+3. ⏳ Baixa prioridade: Re-treinar Stage 2 frozen com checkpoint validation inline
 
 ---
 
@@ -891,5 +882,7 @@ Objetivo: Gerar figuras, tabelas e insights para capítulos da tese
 
 ---
 
-**Última Atualização:** 13 de outubro de 2025  
-**Próxima Revisão:** Após conclusão de Exp 10A (Stage 2 frozen recovery)
+**Última Atualização:** 14 de outubro de 2025  
+**Status Exp 10A:** ❌ FALHOU (checkpoint save/load bug)  
+**Próxima Ação Prioritária:** Implementar Exp 11A (Adapter Layers) para contornar bloqueio do Stage 2
+
