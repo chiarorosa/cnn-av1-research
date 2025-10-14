@@ -201,6 +201,8 @@ def main():
                        help="Number of dataloader workers")
     parser.add_argument("--seed", type=int, default=42,
                        help="Random seed")
+    parser.add_argument("--save-epoch-0", action="store_true",
+                       help="Save checkpoint after epoch 0 (frozen backbone)")
     
     args = parser.parse_args()
     
@@ -295,16 +297,24 @@ def main():
     print(f"\n[3/6] Creating model...")
     model = Stage2Model(pretrained=True).to(device)
     
-    # ⚠️  NOT loading Stage 1 backbone due to Negative Transfer
-    # Reason: Stage 1 (binary: NONE vs PARTITION) features are incompatible 
-    #         with Stage 2 (3-way: SPLIT vs RECT vs AB) task
-    # References:
-    #   - Yosinski et al., 2014: "How transferable are features in deep neural networks?"
-    #   - Kornblith et al., 2019: "Do Better ImageNet Models Transfer Better?"
-    # Solution: Use only ImageNet pretrained ResNet-18 (already loaded via pretrained=True)
-    print(f"  📚 Using ImageNet-only pretrained ResNet-18")
-    print(f"  🔬 Strategy: Train from scratch to avoid negative transfer")
-    print(f"  📄 See: PLANO_v6_val2.md (Opção 1)")
+    # Load Stage 1 backbone if path provided
+    if args.stage1_model and Path(args.stage1_model).exists():
+        print(f"  📥 Loading Stage 1 backbone from: {args.stage1_model}")
+        checkpoint = torch.load(args.stage1_model, map_location=device, weights_only=False)
+        
+        # Load backbone weights from Stage 1
+        backbone_state_dict = {}
+        for k, v in checkpoint['model_state_dict'].items():
+            if k.startswith('backbone.'):
+                backbone_state_dict[k] = v
+        
+        model.load_state_dict(backbone_state_dict, strict=False)
+        print(f"  ✅ Loaded {len(backbone_state_dict)} backbone layers from Stage 1")
+        print(f"  🔬 Strategy: Transfer learning from Stage 1 (F1=72.28%)")
+    else:
+        print(f"  📚 Using ImageNet-only pretrained ResNet-18")
+        print(f"  🔬 Strategy: Train from scratch to avoid negative transfer")
+        print(f"  📄 See: PLANO_v6_val2.md (Opção 1)")
     
     print(f"  Parameters: {sum(p.numel() for p in model.parameters()):,}")
     
@@ -395,6 +405,18 @@ def main():
         print(f"  Val   - Macro F1: {val_metrics['macro_f1']:.2%}")
         for cls_name, f1 in zip(class_names, per_class_f1):
             print(f"          {cls_name:10s} F1: {f1:.2%}")
+        
+        # Save epoch 1 checkpoint (frozen backbone) if requested
+        if epoch == 1 and args.save_epoch_0:
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+                'val_macro_f1': val_metrics['macro_f1'],
+                'val_metrics': val_metrics,
+            }, output_dir / "stage2_model_epoch1_frozen.pt")
+            print(f"  💾 Saved epoch 1 (frozen) checkpoint - F1: {val_metrics['macro_f1']:.2%}")
         
         # Save best model
         if val_metrics['macro_f1'] > best_macro_f1:
