@@ -1,9 +1,10 @@
 """
-Script 001: Prepare V6 Dataset
-Adapts v5 dataset for v6 architecture with key changes:
+Script 001: Prepare V7 Dataset
+Adapts v6 dataset for v7 architecture with key changes:
 1. Stage 2 has only 3 classes (SPLIT, RECT, AB)
 2. Filters out NONE (handled by Stage 1) and 1TO4
 3. Saves metadata for each stage
+4. Fully independent from v6 (uses v7_pipeline)
 """
 
 import sys
@@ -12,8 +13,8 @@ import torch
 import numpy as np
 import json
 
-# Import v6 utilities (now standalone)
-sys.path.insert(0, str(Path(__file__).parent.parent / "v6_pipeline"))
+# Import v7 utilities (fully independent)
+sys.path.insert(0, str(Path(__file__).parent.parent / "v7_pipeline"))
 from data_hub import (
     load_block_records,
     train_test_split,
@@ -26,7 +27,7 @@ from data_hub import (
     STAGE3_GROUPS_V6
 )
 
-def prepare_v6_dataset(
+def prepare_v7_dataset(
     base_path: Path,
     block_size: str = "16",
     output_dir: Path = None,
@@ -34,7 +35,7 @@ def prepare_v6_dataset(
     seed: int = 42
 ):
     """
-    Prepare V6 dataset from raw data
+    Prepare V7 dataset from raw data
     
     Args:
         base_path: Path to raw data
@@ -45,12 +46,12 @@ def prepare_v6_dataset(
     """
     
     print(f"\n{'='*70}")
-    print(f"  Preparing V6 Dataset - Block Size {block_size}")
+    print(f"  Preparing V7 Dataset - Block Size {block_size}")
     print(f"{'='*70}\n")
     
     # Set default output dir
     if output_dir is None:
-        output_dir = Path(__file__).parent.parent / f"v6_dataset" / f"block_{block_size}"
+        output_dir = Path(__file__).parent.parent / f"v7_dataset" / f"block_{block_size}"
     
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -177,7 +178,7 @@ def prepare_v6_dataset(
     save_metadata(metadata_path, metadata)
     
     print(f"\n{'='*70}")
-    print(f"  ✅ V6 Dataset prepared successfully!")
+    print(f"  ✅ V7 Dataset prepared successfully!")
     print(f"  📁 Output directory: {output_dir}")
     print(f"{'='*70}\n")
     
@@ -187,7 +188,7 @@ def prepare_v6_dataset(
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description="Prepare V6 dataset")
+    parser = argparse.ArgumentParser(description="Prepare V7 dataset")
     parser.add_argument(
         "--base-path",
         type=str,
@@ -205,7 +206,7 @@ if __name__ == "__main__":
         "--output-dir",
         type=str,
         default=None,
-        help="Output directory (default: pesquisa_v6/v6_dataset/block_<size>)"
+        help="Output directory (default: pesquisa_v7/v7_dataset/block_<size>)"
     )
     parser.add_argument(
         "--test-ratio",
@@ -222,7 +223,7 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    prepare_v6_dataset(
+    prepare_v7_dataset(
         base_path=Path(args.base_path),
         block_size=args.block_size,
         output_dir=Path(args.output_dir) if args.output_dir else None,
