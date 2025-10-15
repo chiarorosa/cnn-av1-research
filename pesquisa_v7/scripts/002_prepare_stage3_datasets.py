@@ -1,8 +1,9 @@
 """
-Script 002: Prepare Stage 3 Datasets for V6
+Script 002: Prepare Stage 3 Datasets for V7
 Creates specialized datasets for RECT and AB heads with:
 - Oversampling for AB minority classes
 - 3 ensemble versions for AB (different augmentation seeds)
+- Fully independent from v6 (uses v7_pipeline)
 """
 
 import sys
@@ -10,8 +11,8 @@ from pathlib import Path
 import torch
 import numpy as np
 
-# Import v6 utilities (now standalone)
-sys.path.insert(0, str(Path(__file__).parent.parent / "v6_pipeline"))
+# Import v7 utilities (fully independent)
+sys.path.insert(0, str(Path(__file__).parent.parent / "v7_pipeline"))
 from data_hub import (
     load_block_records,
     train_test_split,
@@ -50,7 +51,7 @@ def prepare_stage3_datasets(
     
     # Default output
     if output_base is None:
-        output_base = Path(__file__).parent.parent / "v6_dataset_stage3"
+        output_base = Path(__file__).parent.parent / "v7_dataset_stage3"
     
     # Default AB oversampling: 5x for minority classes (HORZ_B, VERT_A)
     if ab_oversample_factors is None:
@@ -229,7 +230,7 @@ if __name__ == "__main__":
         "--output-base",
         type=str,
         default=None,
-        help="Output base directory"
+        help="Output base directory (default: pesquisa_v7/v7_dataset_stage3)"
     )
     parser.add_argument(
         "--test-ratio",
