@@ -454,6 +454,10 @@ def train_stage2_with_adapter(
     for epoch in range(epochs):
         # Training
         model.train()
+        # CRITICAL FIX (Issue #2): Force backbone BatchNorm to eval mode
+        # Prevents distribution shift between train/val since backbone is frozen
+        adapter_backbone.backbone.eval()
+        
         train_losses = []
         train_preds = []
         train_targets = []
