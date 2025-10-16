@@ -182,7 +182,7 @@ class ClassificationHead(nn.Module):
 # Convenience factory functions for each stage
 def create_stage1_head(**kwargs):
     """Stage 1: Binary (NONE vs PARTITION)"""
-    return ClassificationHead(num_classes=1, hidden_dims=[256], dropout=0.3, **kwargs)
+    return ClassificationHead(num_classes=2, hidden_dims=[256], dropout=0.3, **kwargs)
 
 def create_stage2_head(**kwargs):
     """Stage 2: 3-way (SPLIT, RECT, AB)"""

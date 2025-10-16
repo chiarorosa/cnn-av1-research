@@ -28,21 +28,17 @@ import argparse
 
 # Import v7 pipeline (fully independent)
 sys.path.insert(0, str(Path(__file__).parent.parent / "v7_pipeline"))
-from data_hub import (
-    load_block_records,
-    train_test_split,
+from v7_pipeline.data_hub import (
     build_hierarchical_dataset_v6,
-    filter_for_stage2,
-    filter_for_stage3,
-    get_class_weights,
     create_balanced_sampler,
-    compute_class_distribution_v6,
-    STAGE2_GROUPS_V6
+    get_class_weights,
+    STAGE2_GROUPS_V6,
+    compute_class_distribution_v6
 )
-from backbone import create_stage1_head, create_stage2_head, create_stage3_rect_head, create_stage3_ab_head
-from conv_adapter import ConvAdapter, AdapterBackbone
-from losses import FocalLoss, ClassBalancedFocalLoss
-from evaluation import MetricsCalculator
+from v7_pipeline.backbone import create_stage1_head, create_stage2_head, create_stage3_rect_head, create_stage3_ab_head
+from v7_pipeline.conv_adapter import ConvAdapter, AdapterBackbone
+from v7_pipeline.losses import FocalLoss, ClassBalancedFocalLoss
+from v7_pipeline.evaluation import MetricsCalculator
 
 
 def train_stage1_adapter_solution(
@@ -68,37 +64,63 @@ def train_stage1_adapter_solution(
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    # Load dataset
+    # Load dataset (already processed tensors)
     print(f"[1/6] Loading dataset...")
-    train_dataset = torch.load(dataset_dir / "train.pt")
-    val_dataset = torch.load(dataset_dir / "val.pt")
+    train_data = torch.load(dataset_dir / "train.pt")
+    val_data = torch.load(dataset_dir / "val.pt")
 
-    # Build hierarchical datasets
-    train_hier = build_hierarchical_dataset_v6(train_dataset, stage='stage1')
-    val_hier = build_hierarchical_dataset_v6(val_dataset, stage='stage1')
+    # Create datasets directly from tensors
+    from torch.utils.data import TensorDataset
+    
+    train_dataset = TensorDataset(
+        train_data['samples'],
+        train_data['labels_stage1'],  # Binary labels for Stage 1
+        train_data['qps']
+    )
+    
+    val_dataset = TensorDataset(
+        val_data['samples'],
+        val_data['labels_stage1'],  # Binary labels for Stage 1
+        val_data['qps']
+    )
 
     # Create data loaders
     train_loader = DataLoader(
-        train_hier,
+        train_dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=4,
         pin_memory=True
     )
     val_loader = DataLoader(
-        val_hier,
+        val_dataset,
         batch_size=batch_size,
         shuffle=False,
         num_workers=4,
         pin_memory=True
     )
 
-    print(f"  Train samples: {len(train_hier)}")
-    print(f"  Val samples: {len(val_hier)}")
+    print(f"  Train samples: {len(train_dataset)}")
+    print(f"  Val samples: {len(val_dataset)}")
 
     # Create model
     print(f"\n[2/6] Creating Stage 1 model...")
-    model = create_stage1_head(pretrained=True)
+    from v7_pipeline.backbone import ImprovedBackbone, ClassificationHead
+    
+    backbone = ImprovedBackbone(pretrained=True)
+    head = ClassificationHead(num_classes=2, hidden_dims=[256], dropout=0.3)
+    
+    class Stage1Model(nn.Module):
+        def __init__(self, backbone, head):
+            super().__init__()
+            self.backbone = backbone
+            self.head = head
+        
+        def forward(self, x):
+            features = self.backbone(x)
+            return self.head(features)
+    
+    model = Stage1Model(backbone, head)
     model = model.to(device)
 
     # Loss function
@@ -112,7 +134,7 @@ def train_stage1_adapter_solution(
 
     # Learning rate scheduler
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='max', factor=0.5, patience=5, verbose=True
+        optimizer, mode='max', factor=0.5, patience=5
     )
 
     # Training loop
@@ -126,7 +148,7 @@ def train_stage1_adapter_solution(
         'lr_backbone': [], 'lr_head': []
     }
 
-    metrics_calc = MetricsCalculator(num_classes=2, class_names=['NONE', 'PARTITION'])
+    metrics_calc = MetricsCalculator
 
     for epoch in range(epochs):
         # Training
@@ -137,8 +159,9 @@ def train_stage1_adapter_solution(
 
         pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}")
         for batch in pbar:
-            images = batch['image'].to(device)
-            targets = batch['label_stage1'].to(device)
+            images, targets, _ = batch  # Unpack (images, labels, qps)
+            images = images.to(device)
+            targets = targets.to(device)
 
             optimizer.zero_grad()
             outputs = model(images)
@@ -161,8 +184,9 @@ def train_stage1_adapter_solution(
 
         with torch.no_grad():
             for batch in val_loader:
-                images = batch['image'].to(device)
-                targets = batch['label_stage1'].to(device)
+                images, targets, _ = batch  # Unpack (images, labels, qps)
+                images = images.to(device)
+                targets = targets.to(device)
 
                 outputs = model(images)
                 loss = criterion(outputs, targets)
@@ -172,10 +196,10 @@ def train_stage1_adapter_solution(
                 val_targets.extend(targets.cpu().numpy())
 
         # Calculate metrics
-        train_metrics = metrics_calc.compute_metrics(
+        train_metrics = MetricsCalculator.calculate_classification_metrics(
             np.array(train_targets), np.array(train_preds)
         )
-        val_metrics = metrics_calc.compute_metrics(
+        val_metrics = MetricsCalculator.calculate_classification_metrics(
             np.array(val_targets), np.array(val_preds)
         )
 
@@ -269,48 +293,71 @@ def train_stage2_with_adapter(
 
     # Load Stage 1 checkpoint
     print(f"[1/7] Loading Stage 1 checkpoint...")
-    stage1_ckpt = torch.load(stage1_checkpoint, map_location='cpu')
+    stage1_ckpt = torch.load(stage1_checkpoint, map_location='cpu', weights_only=False)
 
-    # Load dataset
+    # Load dataset (already processed tensors)
     print(f"[2/7] Loading dataset...")
-    train_dataset = torch.load(dataset_dir / "train.pt")
-    val_dataset = torch.load(dataset_dir / "val.pt")
+    train_data = torch.load(dataset_dir / "train.pt")
+    val_data = torch.load(dataset_dir / "val.pt")
 
     # Filter for Stage 2 (remove NONE samples)
-    train_stage2 = filter_for_stage2(train_dataset)
-    val_stage2 = filter_for_stage2(val_dataset)
+    train_stage2_mask = train_data['labels_stage2'] >= 0
+    val_stage2_mask = val_data['labels_stage2'] >= 0
+    
+    train_stage2_data = {
+        'samples': train_data['samples'][train_stage2_mask],
+        'labels': train_data['labels_stage2'][train_stage2_mask],
+        'qps': train_data['qps'][train_stage2_mask]
+    }
+    
+    val_stage2_data = {
+        'samples': val_data['samples'][val_stage2_mask],
+        'labels': val_data['labels_stage2'][val_stage2_mask],
+        'qps': val_data['qps'][val_stage2_mask]
+    }
 
-    # Build datasets
-    train_hier = build_hierarchical_dataset_v6(train_stage2, stage='stage2')
-    val_hier = build_hierarchical_dataset_v6(val_stage2, stage='stage2')
+    # Create datasets directly from tensors
+    from torch.utils.data import TensorDataset
+    
+    train_dataset = TensorDataset(
+        train_stage2_data['samples'],
+        train_stage2_data['labels'],  # Stage 2 labels (0,1,2)
+        train_stage2_data['qps']
+    )
+    
+    val_dataset = TensorDataset(
+        val_stage2_data['samples'],
+        val_stage2_data['labels'],  # Stage 2 labels (0,1,2)
+        val_stage2_data['qps']
+    )
 
     # Create balanced sampler for Stage 2 (3 classes)
-    stage2_labels = train_hier.labels_stage2.numpy()
+    stage2_labels = train_stage2_data['labels'].numpy()
     sampler = create_balanced_sampler(stage2_labels)
 
     # Create data loaders
     train_loader = DataLoader(
-        train_hier,
+        train_dataset,
         batch_size=batch_size,
         sampler=sampler,
         num_workers=4,
         pin_memory=True
     )
     val_loader = DataLoader(
-        val_hier,
+        val_dataset,
         batch_size=batch_size,
         shuffle=False,
         num_workers=4,
         pin_memory=True
     )
 
-    print(f"  Train samples: {len(train_hier)} (balanced)")
-    print(f"  Val samples: {len(val_hier)}")
+    print(f"  Train samples: {len(train_dataset)} (balanced)")
+    print(f"  Val samples: {len(val_dataset)}")
 
     # Show Stage 2 distribution
     stage2_names = list(STAGE2_GROUPS_V6.keys())
-    train_dist = compute_class_distribution_v6(train_stage2.labels)
-    val_dist = compute_class_distribution_v6(val_stage2.labels)
+    train_dist = compute_class_distribution_v6(train_stage2_data['labels'].numpy())
+    val_dist = compute_class_distribution_v6(val_stage2_data['labels'].numpy())
 
     print(f"\n  Stage 2 distribution:")
     print(f"  Train: {[f'{k}: {v*100:.1f}%' for k, v in train_dist.items()]}")
@@ -319,22 +366,43 @@ def train_stage2_with_adapter(
     # Create model with adapter
     print(f"\n[3/7] Creating Stage 2 model with Conv-Adapter...")
 
-    # Load backbone from Stage 1 (frozen)
-    base_model = create_stage1_head(pretrained=False)
-    base_model.load_state_dict(stage1_ckpt['model_state_dict'])
+    # Load backbone and head from Stage 1 checkpoint
+    from v7_pipeline.backbone import ImprovedBackbone
+    backbone = ImprovedBackbone(pretrained=False)  # Will load weights from checkpoint
+    backbone_state_dict = {k: v for k, v in stage1_ckpt['model_state_dict'].items() if k.startswith('backbone.')}
+    backbone_state_dict = {k.replace('backbone.', '', 1): v for k, v in backbone_state_dict.items()}
+    backbone.load_state_dict(backbone_state_dict)
+    
+    head = create_stage1_head()
+    head_state_dict = {k: v for k, v in stage1_ckpt['model_state_dict'].items() if k.startswith('head.')}
+    head_state_dict = {k.replace('head.', '', 1): v for k, v in head_state_dict.items()}
+    head.load_state_dict(head_state_dict)
 
     # Create adapter backbone (frozen backbone + adapter)
-    adapter_backbone = AdapterBackbone(
-        base_model.backbone,
-        adapter_reduction=adapter_reduction,
-        freeze_backbone=True
-    )
+    adapter_config = {
+        'reduction': adapter_reduction,
+        'layers': ['layer3', 'layer4'],  # Adapt deep layers as per Chen et al.
+        'variant': 'conv_parallel'
+    }
+    adapter_backbone = AdapterBackbone(backbone, adapter_config=adapter_config)
 
     # Create Stage 2 head
     stage2_head = create_stage2_head()
 
+    # Create wrapper to extract features from AdapterBackbone
+    class AdapterBackboneWrapper(nn.Module):
+        def __init__(self, adapter_backbone):
+            super().__init__()
+            self.adapter_backbone = adapter_backbone
+        
+        def forward(self, x):
+            features, _ = self.adapter_backbone(x)
+            return features
+    
+    adapter_backbone_wrapper = AdapterBackboneWrapper(adapter_backbone)
+    
     # Combine
-    model = nn.Sequential(adapter_backbone, stage2_head)
+    model = nn.Sequential(adapter_backbone_wrapper, stage2_head)
     model = model.to(device)
 
     # Count parameters
@@ -347,23 +415,27 @@ def train_stage2_with_adapter(
     print(f"  Parameter efficiency: {param_efficiency:.1f}%")
 
     # Loss function with class balancing
-    class_weights = get_class_weights(stage2_labels, beta=0.9999)
-    class_weights = torch.from_numpy(class_weights).float().to(device)
+    # Count samples per class for ClassBalancedFocalLoss
+    unique_labels, counts = np.unique(stage2_labels, return_counts=True)
+    samples_per_class = np.zeros(3)  # 3 classes in Stage 2
+    for label, count in zip(unique_labels, counts):
+        samples_per_class[label] = count
+    
     criterion = ClassBalancedFocalLoss(
-        gamma=2.0,
-        alpha=0.25,
-        class_weights=class_weights
+        samples_per_class=samples_per_class,
+        beta=0.9999,
+        gamma=2.0
     )
 
     # Optimizer (only adapter and head)
     optimizer = optim.AdamW([
-        {'params': adapter_backbone.adapter.parameters(), 'lr': lr_adapter},
+        {'params': adapter_backbone.adapters.parameters(), 'lr': lr_adapter},
         {'params': stage2_head.parameters(), 'lr': lr_head}
     ])
 
     # Learning rate scheduler
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='max', factor=0.5, patience=5, verbose=True
+        optimizer, mode='max', factor=0.5, patience=5
     )
 
     # Training loop
@@ -377,7 +449,7 @@ def train_stage2_with_adapter(
         'lr_adapter': [], 'lr_head': []
     }
 
-    metrics_calc = MetricsCalculator(num_classes=3, class_names=stage2_names)
+    metrics_calc = MetricsCalculator
 
     for epoch in range(epochs):
         # Training
@@ -388,8 +460,9 @@ def train_stage2_with_adapter(
 
         pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}")
         for batch in pbar:
-            images = batch['image'].to(device)
-            targets = batch['label_stage2'].to(device)
+            images, targets, _ = batch  # Unpack (images, labels, qps)
+            images = images.to(device)
+            targets = targets.to(device)
 
             # Skip samples not in Stage 2 (-1 labels)
             valid_mask = targets >= 0
@@ -420,8 +493,9 @@ def train_stage2_with_adapter(
 
         with torch.no_grad():
             for batch in val_loader:
-                images = batch['image'].to(device)
-                targets = batch['label_stage2'].to(device)
+                images, targets, _ = batch  # Unpack (images, labels, qps)
+                images = images.to(device)
+                targets = targets.to(device)
 
                 valid_mask = targets >= 0
                 if valid_mask.sum() == 0:
@@ -439,10 +513,10 @@ def train_stage2_with_adapter(
 
         # Calculate metrics
         if train_preds and val_preds:
-            train_metrics = metrics_calc.compute_metrics(
+            train_metrics = MetricsCalculator.calculate_classification_metrics(
                 np.array(train_targets), np.array(train_preds)
             )
-            val_metrics = metrics_calc.compute_metrics(
+            val_metrics = MetricsCalculator.calculate_classification_metrics(
                 np.array(val_targets), np.array(val_preds)
             )
 
