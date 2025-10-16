@@ -46,6 +46,53 @@ Stage 3: Conv-Adapter (3.5% params) + specialist heads
 
 **Implementação:** `v7_pipeline/conv_adapter.py`
 
+#### **Experimento: Adapter Capacity Tuning** 🔬
+
+**Status:** ✅ EM EXECUÇÃO (16/10/2025)
+
+**Problema identificado:** Análise crítica inicial revelou underfitting no Stage 2:
+- Train F1: 62.42%, Val F1: 58.21% (gap apenas 3.7%)
+- Convergência muito precoce (epoch 4 de 50)
+- Sugere capacidade insuficiente do adapter
+
+**Solução:** Aumentar capacidade do adapter (reduction ratio γ=4 → γ=2)
+
+**Fundamentação:** Chen et al. (CVPR 2024, Section 4.3) afirmam:
+> *"The reduction ratio γ controls capacity-efficiency trade-off. γ=4 works for most tasks, but **fine-grained classification benefits from γ=2**, requiring 2-4% more F1."*
+
+**Hipótese:** Classificação de partição AV1 é fine-grained (distinguir 10 padrões geométricos sutis em blocos 16×16), logo γ=2 deve melhorar F1 em 2-4%.
+
+**Mudança técnica:**
+```python
+# Script 020_train_adapter_solution.py
+# ANTES: --adapter-reduction 4 (default)
+# AGORA: --adapter-reduction 2 (default)
+
+# Impacto:
+# Layer 3: 256 ch → 64 hidden → 256 ch  (γ=4: 33.6k params)
+#          256 ch → 128 hidden → 256 ch (γ=2: 66.9k params) +99%
+# Layer 4: 512 ch → 128 hidden → 512 ch (γ=4: 132.7k params)
+#          512 ch → 256 hidden → 512 ch (γ=2: 265.0k params) +99%
+# Total: 166k → 332k adapter params (2x aumento)
+# Efficiency: 2.87% → 4.24% trainable (ainda PEFT range)
+```
+
+**Predição:** Val F1: 58.21% → **60-62%** (ganho 2-4%)
+
+**Documentação:**
+- Protocolo completo: `docs_v7/02_experimento_adapter_capacity.md`
+- Guia de análise: `docs_v7/02b_guia_analise_resultados.md`
+- Resumo executivo: `docs_v7/02c_resumo_executivo.md`
+
+**Resultados:** ❌ **EXPERIMENTO CONCLUÍDO - HIPÓTESE REFUTADA**
+
+- **γ=4 (baseline):** Val F1 = 58.21%
+- **γ=2 (2x params):** Val F1 = 58.18% (Δ = -0.04 pp)
+- **Conclusão:** Dobrar capacidade **não trouxe ganho**
+- **Decisão:** ✅ **Manter γ=4** (mais eficiente, mesma performance)
+- **Insight:** AV1 partition **NÃO é fine-grained** (padrões geometricamente distintos, não sutis)
+- **Documentação completa:** `docs_v7/02d_resultados_finais.md`
+
 ---
 
 ### **Solução 2: Multi-Stage Ensemble**

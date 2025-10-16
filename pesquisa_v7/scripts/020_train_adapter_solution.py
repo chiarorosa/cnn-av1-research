@@ -616,7 +616,7 @@ def main():
         type=int,
         default=4,
         choices=[2, 4, 8, 16],
-        help="Adapter reduction ratio (default: 4)"
+        help="Adapter reduction ratio (default: 4, ablation showed γ=2 gives no improvement)"
     )
     parser.add_argument(
         "--device",
